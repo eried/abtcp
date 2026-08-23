@@ -173,3 +173,27 @@ test('visitedBefore reduces newForYear but not the streak', () => {
   assert.equal(summary.longestStreak, 2);
   assert.equal(summary.newForYear, 1);
 });
+
+test('minSessionPct forces a real session when arriving above the target', () => {
+  const t = trip({ stops: [newStop({ site: A, targetSoc: 30 }), newStop({ site: B, targetSoc: 30 })], legs: [{ km: 60 }, { km: 60 }] });
+  const { stops } = compute(t);
+  assert.ok(stops[0].arrivalSoc > 70);
+  assert.ok(Math.abs(stops[0].session.targetSoc - (stops[0].arrivalSoc + 8)) < 1e-9);
+  assert.ok(Math.abs(stops[0].session.kwhStored - 6) < 1e-9);
+  assert.equal(stops[0].session.belowMin, false);
+  t.settings.rules.minSessionPct = 0;
+  const r2 = compute(t);
+  assert.equal(r2.stops[0].session.kwhStored, 0);
+  assert.equal(r2.stops[0].session.belowMin, true);
+});
+
+test('smoothElevations removes single-sample spikes and keeps real climbs', async () => {
+  const { smoothElevations } = await import('../../app/model/timeline.js');
+  const flat = Array(40).fill(10); flat[10] = 90; flat[25] = 120;
+  const sm = smoothElevations(flat, 2);
+  let gain = 0; for (let i = 1; i < sm.length; i++) gain += Math.max(0, sm[i] - sm[i - 1]);
+  assert.ok(gain < 5, `gain ${gain}`);
+  const climb = Array.from({ length: 40 }, (_, i) => i * 10);
+  const sc = smoothElevations(climb, 2);
+  assert.ok(Math.abs(sc[sc.length - 1] - sc[0] - 370) < 15);
+});

@@ -12,9 +12,33 @@ export function legKey(a, b) {
   return `${(+a.lat).toFixed(5)},${(+a.lng).toFixed(5)}>${(+b.lat).toFixed(5)},${(+b.lng).toFixed(5)}`;
 }
 
+/** Median-then-mean filter over a window of 2·radius+1 samples: removes DEM spikes on fjord/cliff roads. */
+export function smoothElevations(z, radius = 2) {
+  const n = z.length;
+  if (n < 3) return z.slice();
+  const med = new Array(n);
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const w = [];
+    for (let j = Math.max(0, i - radius); j <= Math.min(n - 1, i + radius); j++) w.push(z[j]);
+    w.sort((a, b) => a - b);
+    med[i] = w[Math.floor(w.length / 2)];
+  }
+  for (let i = 0; i < n; i++) {
+    let sum = 0, c = 0;
+    for (let j = Math.max(0, i - radius); j <= Math.min(n - 1, i + radius); j++) { sum += med[j]; c++; }
+    out[i] = sum / c;
+  }
+  return out;
+}
+
 export function legChunks(route) {
   const cs = route.chunks || [];
-  return cs.map((c, i) => unpackChunk(c, i + 1 < cs.length ? cs[i + 1] : (route.last || c)));
+  if (!cs.length) return [];
+  const raw = cs.map(c => c[7] ?? 0);
+  raw.push(route.last && route.last[2] != null ? route.last[2] : raw[raw.length - 1]);
+  const z = smoothElevations(raw, 2);
+  return cs.map((c, i) => ({ ...unpackChunk(c, i + 1 < cs.length ? cs[i + 1] : (route.last || c)), elev0: z[i], elev1: z[i + 1] }));
 }
 
 export function effectiveWeather(leg, settings) {
@@ -89,7 +113,7 @@ export function compute(trip) {
     let session = null;
 
     if (stop.charge && stop.kind === 'charger') {
-      const target = Math.max(+stop.charge.targetSoc, s);
+      const target = Math.max(+stop.charge.targetSoc, Math.min(100, s + (+S.rules.minSessionPct || 0)));
       const coldStart = tempC < 5 && !S.precondition;
       const sess = chargeSession({ car, siteKw: stop.kw, fromSoc: s, toSoc: target, coldStart, overheadMin: S.plugOverheadMin });
       const start = t + S.plugOverheadMin * MIN;

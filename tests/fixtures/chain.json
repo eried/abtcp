@@ -1,0 +1,26 @@
+{
+ "start": {
+  "lat": 69.6496,
+  "lng": 18.9553
+ },
+ "chain": [
+  {
+   "name": "Skibotn, Norway",
+   "id": 1089,
+   "lat": 69.392448,
+   "lng": 20.268423
+  },
+  {
+   "name": "Setermoen, Norway",
+   "id": 372,
+   "lat": 68.860147,
+   "lng": 18.346723
+  },
+  {
+   "name": "Narvik, Norway",
+   "id": 5906,
+   "lat": 68.436763,
+   "lng": 17.425196
+  }
+ ]
+}

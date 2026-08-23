@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ABTCP · A Better Tesla Contest Planner</title>
+<meta name="description" content="Plan road trips that chain the most unique Tesla Supercharger sites for the 2026 Free Supercharging Competition, with realistic battery, weather, elevation and the 24-hour streak timer.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23e82127'/%3E%3Cpath d='M18 5 8 18h7l-1 9 10-13h-7z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="app/styles.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="bolt" aria-hidden="true">⚡</span>
+      <div><b>ABTCP</b><small>a better tesla contest planner</small></div>
+    </div>
+    <div class="counters" aria-label="Trip summary">
+      <div class="counter"><b id="counter-unique">0</b><span>unique sites</span></div>
+      <div class="counter"><b id="counter-streak">–</b><span>streak</span></div>
+      <div class="counter"><b id="counter-deadline">–</b><span>next site by</span></div>
+      <div class="counter"><b id="counter-km">0 km</b><span>distance</span></div>
+      <div class="counter"><b id="counter-time">0 min</b><span>total time</span></div>
+      <div class="counter"><b id="counter-kwh">0 kWh</b><span>supercharged</span></div>
+      <div class="counter"><b id="counter-eta">–</b><span>arrive</span></div>
+    </div>
+    <div class="actions">
+      <span id="status" class="status" aria-live="polite"></span>
+      <button id="btn-fit" title="Zoom the map to the trip">Fit</button>
+      <button id="btn-recompute" title="Re-route every leg and refresh weather">Recompute</button>
+      <button id="btn-import" title="Load a trip .json">Import</button>
+      <input type="file" id="file-import" accept=".json,application/json" hidden>
+      <button id="btn-export" title="Download this trip as .json">Export</button>
+      <button id="btn-new" class="danger" title="Start a new empty trip">New</button>
+    </div>
+  </header>
+  <main>
+    <aside id="sidebar">
+      <nav class="tabs" role="tablist">
+        <button id="tab-trip" class="active" role="tab" aria-selected="true">Trip</button>
+        <button id="tab-settings" role="tab" aria-selected="false">Settings</button>
+        <button id="tab-help" role="tab" aria-selected="false">Help</button>
+      </nav>
+      <section id="panel-trip" class="panel" role="tabpanel"></section>
+      <section id="panel-settings" class="panel" role="tabpanel" hidden></section>
+      <section id="panel-help" class="panel" role="tabpanel" hidden>
+        <h2>What this is</h2>
+        <p>A planner for Tesla's <a href="https://www.tesla.com/support/tesla-app/charging-badges/contest" target="_blank" rel="noopener">2026 Free Supercharging Competition</a>, "Longest Trip" category: the longest streak of <em>unique</em> Supercharger sites where every new site's charging session starts within <b>24 hours of the previous session's start</b>. Repeat visits are allowed but neither count nor reset the timer. Ties break on total kWh.</p>
+        <p>Instead of the fewest stops, this planner helps you chain the <em>most</em> stops: short hops, small charges, never below your reserve, and never past the deadline.</p>
+        <h2>How to use</h2>
+        <ol>
+          <li>Set the <b>start</b> (search a place, click the map, or pick a charger), the departure time and battery level.</li>
+          <li>Optionally set a <b>destination</b> so the "Next stop" list only shows sites that make progress.</li>
+          <li>Add the next charger from the <b>Next stop</b> list or by clicking a red dot on the map. The app routes the real road (ferries included), samples elevation and weather, and predicts the arrival battery.</li>
+          <li>Set how much to <b>charge</b> at each stop (the card shows the minimum useful level for the next hop) and add <b>rests</b> (sleep) with or without Sentry mode.</li>
+          <li>Watch the <b>streak timer</b> on every card and in the header. Use <b>Auto-chain</b> to let the planner add stops greedily toward the destination.</li>
+          <li><b>Export</b> the plan as JSON (everything included: settings, car, stops, cached routes) and <b>Import</b> it later; the browser also autosaves.</li>
+        </ol>
+        <h2>Model notes</h2>
+        <ul>
+          <li>Consumption: aerodynamic + rolling + climbing physics with regen, heat-pump HVAC by temperature, wind along the route direction, wet-road factor, a cold-battery factor and a configurable safety margin (the in-car estimate is usually optimistic).</li>
+          <li>Speeds come from OpenStreetMap limits via OSRM plus your driving profile (e.g. +5 km/h on roads ≥ 60 km/h).</li>
+          <li>Charging: the Model Y LR curve capped by the site power (V2 = 150 kW), 0.5 % integration steps, plug-in overhead, 6 % charging losses for the kWh counter.</li>
+          <li>Parked drain: Sentry ≈ 0.2 %/h (≈ 5 %/day on 2024.38+ firmware), off ≈ 0.04 %/h, ×1.3 below 0 °C.</li>
+          <li>Ferries: no consumption during the crossing, OSRM crossing time plus a configurable wait.</li>
+        </ul>
+        <h2>Data &amp; services</h2>
+        <p>Sites: <a href="https://supercharge.info" target="_blank" rel="noopener">supercharge.info</a> (community database, refresh with <code>tools/fetch_chargers.py</code>). Routing: OSRM demo server (fair use, self-host for heavy use). Weather &amp; elevation: Open-Meteo. Search: Photon / Nominatim. Map: OpenStreetMap / CARTO.</p>
+        <p class="muted">Not affiliated with Tesla. Verify the rules on Tesla's page; all rule parameters are editable in Settings.</p>
+      </section>
+    </aside>
+    <div id="map" role="application" aria-label="Map"></div>
+  </main>
+  <div id="toast" class="toast" role="status"></div>
+</div>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script type="module" src="app/main.js"></script>
+</body>
+</html>

@@ -7,7 +7,7 @@ export const STORAGE_KEY = 'abtcp.trip';
 
 export function defaultSettings() {
   return {
-    rules: { windowH: 24, anchor: 'start', marginMin: 60, minSessionMin: 5, minSessionKwh: 1 },
+    rules: { windowH: 24, anchor: 'start', marginMin: 60, minSessionMin: 2, minSessionKwh: 1, minSessionPct: 8 },
     reserveSoc: 10,
     marginPct: 5,
     defaultTargetSoc: 60,
