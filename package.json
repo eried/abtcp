@@ -1,0 +1,10 @@
+{
+  "name": "abtcp",
+  "private": true,
+  "type": "module",
+  "description": "A Better Tesla Contest Planner - plan road trips that maximize unique Supercharger sites",
+  "scripts": {
+    "test": "node --test \"tests/unit/*.test.mjs\"",
+    "serve": "python -m http.server 8080"
+  }
+}
