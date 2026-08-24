@@ -322,7 +322,20 @@ def test_plan_export_import(page, url, log):
     assert page.locator("#dest-card .batt").count() == 1
     assert page.locator(".stop-icon .mini-batt").count() >= 2, "mini battery under stop numbers"
     assert page.locator(".stop-icon.start .mini-batt").count() == 1, "battery on the start marker"
-    assert page.locator(".stop-icon.dest .mini-batt").count() == 1, "battery on the destination marker" 
+    assert page.locator(".stop-icon.dest .mini-batt").count() == 1, "battery on the destination marker"
+
+    # --- badge alignment: the number bubble stays centered on the site at any zoom
+    for z in (6, 10):
+        misalign = page.evaluate("""(z) => { const a = window.__abtcp; const s = a.store.trip.stops[0];
+          a.map.map.setView([s.lat, s.lng], z, { animate: false });
+          const pt = a.map.map.latLngToContainerPoint([s.lat, s.lng]);
+          const rect = document.getElementById('map').getBoundingClientRect();
+          const icons = [...document.querySelectorAll('.leaflet-marker-pane .stop-icon')];
+          const el = icons.find(e => { const n = e.querySelector('.n'); return n && n.textContent === '1' && !e.className.includes('start'); });
+          if (!el) return 'no badge';
+          const b = el.querySelector('.n').getBoundingClientRect();
+          return Math.hypot(b.left + b.width / 2 - (rect.left + pt.x), b.top + b.height / 2 - (rect.top + pt.y)); }""", z)
+        assert isinstance(misalign, (int, float)) and misalign < 6, f"badge misaligned by {misalign}px at zoom {z}" 
 
     # --- map filter: All | Reachable | Iconic (trip sites always visible)
     trip_visible = "window.__abtcp.store.trip.stops.filter(s => s.siteId != null).every(s => window.__abtcp.map.isVisible(s.siteId))"

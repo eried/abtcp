@@ -94,7 +94,7 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
       bar = `<span class="mini-batt" title="arrive ${Math.round(batt.arr)} % → leave ${Math.round(batt.dep)} %"><i class="${batt.cls || ''}" style="width:${pct(batt.arr)}%"></i><b class="${batt.dep < batt.arr ? 'd' : ''}" style="left:${lo}%;width:${w}%"></b></span>`;
     }
     const chip = pass > 0 ? `<span class="pass" title="pass ${pass} at this site">${pass}</span>` : '';
-    return L.divIcon({ className: `stop-icon ${cls}`, html: `<span class="n">${label}</span>${bar}${chip}`, iconSize: [38, 37], iconAnchor: [19 - fanPx, 18] });
+    return L.divIcon({ className: `stop-icon ${cls}`, html: `<span class="n">${label}</span>${bar}${chip}`, iconSize: [38, 40], iconAnchor: [19 - fanPx, 14] });
   }
 
   function setStops({ start, stops, destination }) {
