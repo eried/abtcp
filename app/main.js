@@ -196,7 +196,6 @@ async function main() {
   }
   Object.entries(dTabs).forEach(([k, b]) => b.addEventListener('click', () => showDialogTab(k)));
   $('btn-settings').addEventListener('click', () => openDialog('settings'));
-  $('btn-help').addEventListener('click', () => openDialog('help'));
   $('dialog-close').addEventListener('click', () => dialog.close());
   dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); }); // click the backdrop
 

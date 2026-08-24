@@ -458,7 +458,8 @@ def test_plan_export_import(page, url, log):
     page.wait_for_function(f"window.__abtcp.map.visibleCount() === {total_visible}", timeout=5000)
 
     # --- iconic badge table in Help (now a dialog tab)
-    page.click("#btn-help")
+    page.click("#btn-settings")
+    page.click("#dtab-help")
     page.wait_for_selector("#panel-help:visible", timeout=5000)
     assert page.locator(".iconic-table").count() >= 3, "badge tables per region"
     help_text = page.text_content("#iconic-table")

@@ -252,6 +252,6 @@ main { display: flex; flex: 1; min-height: 0; }
 .dtab { background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 12px; color: var(--muted); }
 .dtab.active { color: var(--text); border-bottom-color: var(--red); }
 .dialog-body { overflow-y: auto; max-height: calc(86vh - 46px); }
-.dialog-body .panel { padding: 12px 16px 24px; }
+.dialog-body .panel { padding: 12px 16px 24px; overflow: visible; flex: none; min-height: 0; }
 .dialog-body .panel[hidden] { display: none; }
 #btn-settings, #btn-help { min-width: 34px; }
