@@ -18,10 +18,10 @@ export function buildEvents(tl, trip) {
   let prevDepart = tl.startTime;
   for (const r of tl.stops) {
     if (r.leg.status === 'ok' && r.arrival > prevDepart) {
-      ev.push({ kind: 'drive', from: prevDepart, to: r.arrival, i: r.i, label: `→ ${r.stop.name}`, sub: `${fmt.km(r.leg.km)}${r.leg.ferries ? ' · ⛴' : ''} · arrive ${fmt.pct(r.arrivalSoc)}` });
+      ev.push({ kind: 'drive', from: prevDepart, to: r.arrival, i: r.i, label: `→ ${r.stop.name}`, sub: `${fmt.km(r.leg.km)}${r.leg.ferries ? ' · ⛴' : ''} · ${fmt.pct(r.arrivalSoc)}` });
     }
     if (r.session && r.session.kwhStored > 0.05) {
-      ev.push({ kind: 'charge', from: r.arrival, to: r.session.end, i: r.i, broken: r.session.broken, label: `⚡ ${Math.round(Math.max(0, r.arrivalSoc))}→${Math.round(r.session.targetSoc)} %`, sub: `${r.stop.name} · ${fmt.kwh(r.session.kwhStored)}` });
+      ev.push({ kind: 'charge', from: r.arrival, to: r.session.end, i: r.i, broken: r.session.broken, label: `⚡${Math.round(Math.max(0, r.arrivalSoc))}→${Math.round(r.session.targetSoc)}%`, sub: `${r.stop.name} · ${fmt.kwh(r.session.kwhStored)}` });
     }
     if (r.rest) {
       ev.push({ kind: 'rest', from: r.rest.start, to: r.rest.end, i: r.i, label: `😴 ${r.stop.name}`, sub: `${r.rest.hours} h${r.rest.sentry ? ' · Sentry' : ''} · −${fmt.n1(r.rest.drainPct)} %` });
@@ -30,7 +30,7 @@ export function buildEvents(tl, trip) {
     prevDepart = r.depart;
   }
   if (tl.destination && tl.destination.leg.status === 'ok' && tl.destination.arrival > prevDepart) {
-    ev.push({ kind: 'drive', from: prevDepart, to: tl.destination.arrival, i: -1, label: `→ ${tl.destination.destination.name}`, sub: `${fmt.km(tl.destination.leg.km)} · arrive ${fmt.pct(tl.destination.arrivalSoc)}` });
+    ev.push({ kind: 'drive', from: prevDepart, to: tl.destination.arrival, i: -1, label: `→ ${tl.destination.destination.name}`, sub: `${fmt.km(tl.destination.leg.km)} · ${fmt.pct(tl.destination.arrivalSoc)}` });
   }
   return ev;
 }
@@ -60,7 +60,7 @@ export function renderItinerary(el, tl, trip) {
       const to = Math.min(e.to, de);
       if (to <= from) continue;
       const lane = e.kind === 'charge' ? 'right' : 'left';
-      const minH = e.kind === 'charge' ? 24 : 26;
+      const minH = e.kind === 'charge' ? 30 : 26;
       let top = (from - ds) / 36e5 * HOUR_PX;
       if (top < laneBottom[lane] + 2) top = laneBottom[lane] + 2;
       const height = Math.max(minH, (to - from) / 36e5 * HOUR_PX - 1);
