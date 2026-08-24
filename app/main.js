@@ -178,18 +178,27 @@ async function main() {
   }
   renderIconicTable($('iconic-table'));
 
-  // ---------- tabs ----------
-  const tabs = { trip: $('tab-trip'), settings: $('tab-settings'), help: $('tab-help') };
-  const panels = { trip: $('panel-trip'), settings: settingsEl, help: $('panel-help') };
-  function showTab(name) {
-    for (const k of Object.keys(tabs)) {
-      tabs[k].classList.toggle('active', k === name);
-      tabs[k].setAttribute('aria-selected', String(k === name));
-      panels[k].hidden = k !== name;
+  // ---------- settings / help dialog ----------
+  const dialog = $('dialog');
+  const dTabs = { settings: $('dtab-settings'), help: $('dtab-help') };
+  const dPanels = { settings: settingsEl, help: $('panel-help') };
+  function showDialogTab(name) {
+    for (const k of Object.keys(dTabs)) {
+      dTabs[k].classList.toggle('active', k === name);
+      dPanels[k].hidden = k !== name;
     }
     if (name === 'settings') paintSettings();
   }
-  Object.entries(tabs).forEach(([k, b]) => b.addEventListener('click', () => showTab(k)));
+  function openDialog(name) {
+    showDialogTab(name);
+    if (!dialog.open) dialog.showModal();
+    dialog.querySelector('.dialog-body').scrollTop = 0;
+  }
+  Object.entries(dTabs).forEach(([k, b]) => b.addEventListener('click', () => showDialogTab(k)));
+  $('btn-settings').addEventListener('click', () => openDialog('settings'));
+  $('btn-help').addEventListener('click', () => openDialog('help'));
+  $('dialog-close').addEventListener('click', () => dialog.close());
+  dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); }); // click the backdrop
 
   // ---------- itinerary ----------
   const itinEl = $('itinerary');
@@ -198,7 +207,7 @@ async function main() {
     showItin = on;
     itinEl.hidden = !on;
     $('map').style.display = on ? 'none' : '';
-    $('btn-itinerary').classList.toggle('primary', on);
+    $('btn-itinerary').textContent = on ? '🗺 Back to the map' : '🗓 Itinerary view';
     if (on && lastTl) renderItinerary(itinEl, lastTl, store.trip);
     if (!on) map.map.invalidateSize();
   }
@@ -233,7 +242,7 @@ async function main() {
     setCounter('counter-time', fmt.h(S.totalTimeH), `${fmt.h(S.totalDriveH)} driving · ${fmt.h(S.chargeH)} charging · ${fmt.h(S.totalTimeH)} total`);
     setCounter('counter-kwh', `${Math.round(S.kwhBilled)} kWh`, `${fmt.kwh(S.kwhBilled)} supercharged — the contest tie-breaker`);
     setCounter('counter-eta', trip.stops.length || trip.destination ? `${fmt.short(S.eta)}` : '–', trip.stops.length || trip.destination ? `Arrive ${fmt.time(S.eta)} at ${fmt.pct(S.endSoc)}` : 'Arrival time and battery at the end of the plan');
-    const etaEl = $('counter-eta'); etaEl.nextElementSibling.textContent = trip.stops.length || trip.destination ? `arrive · ${Math.round(S.endSoc)} %` : 'arrive';
+    const etaEl = $('counter-eta'); etaEl.nextElementSibling.textContent = trip.stops.length || trip.destination ? `arrive · ${Math.round(S.endSoc)}%` : 'arrive';
     $('btn-export').disabled = false;
     $('btn-undo').disabled = !store.canUndo();
     $('btn-redo').disabled = !store.canRedo();
@@ -295,19 +304,28 @@ async function main() {
       if (store.redo()) afterHistory('Redo');
     }
   });
-  // File menu
-  const fileBtn = $('btn-file');
-  const fileMenu = $('file-menu');
-  const closeMenu = () => { fileMenu.hidden = true; fileBtn.setAttribute('aria-expanded', 'false'); };
-  fileBtn.addEventListener('click', e => {
-    e.stopPropagation();
-    const open = fileMenu.hidden;
-    fileMenu.hidden = !open;
-    fileBtn.setAttribute('aria-expanded', String(open));
+  // Drop-down menus (File, Trip)
+  const menus = [['btn-file', 'file-menu'], ['btn-trip', 'trip-menu']].map(([b, m]) => ({ btn: $(b), list: $(m) }));
+  const closeMenus = except => { for (const m of menus) if (m !== except) { m.list.hidden = true; m.btn.setAttribute('aria-expanded', 'false'); } };
+  for (const m of menus) {
+    m.btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const open = m.list.hidden;
+      closeMenus(m);
+      m.list.hidden = !open;
+      m.btn.setAttribute('aria-expanded', String(open));
+    });
+    m.list.addEventListener('click', () => setTimeout(() => closeMenus(), 0));
+  }
+  document.addEventListener('click', e => { for (const m of menus) if (!m.list.hidden && !m.list.contains(e.target) && e.target !== m.btn) { m.list.hidden = true; m.btn.setAttribute('aria-expanded', 'false'); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenus(); });
+
+  $('btn-rename').addEventListener('click', () => {
+    const name = window.prompt('Trip name', store.trip.meta.name);
+    if (name == null) return;
+    store.update(t => { t.meta.name = name.trim() || 'My contest trip'; });
+    toast.success('Trip renamed');
   });
-  fileMenu.addEventListener('click', () => setTimeout(closeMenu, 0));
-  document.addEventListener('click', e => { if (!fileMenu.hidden && !fileMenu.contains(e.target) && e.target !== fileBtn) closeMenu(); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
 
   $('btn-fit').addEventListener('click', () => map.fitTo(sidebar.tripPoints()));
   $('btn-recompute').addEventListener('click', async () => {

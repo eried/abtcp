@@ -74,9 +74,6 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     const dest = trip.destination;
     const straight = dest ? haversineM(trip.start.lat, trip.start.lng, dest.lat, dest.lng) / 1000 : null;
     return `
-    <div class="card">
-      <header><h3>Trip</h3><input type="text" id="trip-name" value="${esc(trip.meta.name)}" placeholder="Trip name" style="flex:1"></header>
-    </div>
     <div class="card start">
       <header><h3>Start</h3><button class="ghost" id="btn-start-map" title="Pick the start on the map">${pickMode === 'start' ? 'click the map…' : '📍 pick on map'}</button></header>
       <div class="search"><input type="text" id="start-search" placeholder="Search a place or a Supercharger…" value="${esc(search.start.q)}" autocomplete="off"><div class="results" id="start-results">${resultsHtml('start')}</div></div>
@@ -510,7 +507,6 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
   el.addEventListener('change', e => {
     const t = e.target;
     const card = t.closest('.stop');
-    if (t.id === 'trip-name') { store.update(tr => { tr.meta.name = t.value.trim() || 'My contest trip'; }); return; }
     if (t.id === 'start-time') { if (t.value) store.update(tr => { tr.start.time = t.value; }); return; }
     if (t.id === 'start-soc') { store.update(tr => { tr.start.soc = Number(t.value); }); refreshCandidates(); return; }
     if (t.id === 'cand-toward') { store.update(tr => { tr.settings.candidates.toward = t.checked; }); refreshCandidates(true); return; }

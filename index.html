@@ -12,17 +12,16 @@
 <body>
 <div id="app">
   <header class="topbar">
-    <div class="brand">
+    <div class="brand" title="ABTCP · a better tesla contest planner">
       <span class="bolt" aria-hidden="true">⚡</span>
-      <div><b>ABTCP</b><small>a better tesla contest planner</small></div>
     </div>
     <div class="counters" aria-label="Trip summary">
-      <div class="counter"><b id="counter-unique">0</b><span>unique sites</span></div>
+      <div class="counter"><b id="counter-unique">0</b><span>sites</span></div>
       <div class="counter wide"><b id="counter-streak">–</b><span>streak</span></div>
-      <div class="counter wide"><b id="counter-deadline">–</b><span>next site by</span></div>
+      <div class="counter wide"><b id="counter-deadline">–</b><span>next by</span></div>
       <div class="counter"><b id="counter-km">0 km</b><span>distance</span></div>
-      <div class="counter"><b id="counter-time">0 min</b><span>total time</span></div>
-      <div class="counter"><b id="counter-kwh">0 kWh</b><span>supercharged</span></div>
+      <div class="counter"><b id="counter-time">0 min</b><span>time</span></div>
+      <div class="counter"><b id="counter-kwh">0 kWh</b><span>charged</span></div>
       <div class="counter wide"><b id="counter-eta">–</b><span>arrive</span></div>
     </div>
     <div class="actions">
@@ -30,8 +29,14 @@
       <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>↶</button>
       <button id="btn-redo" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
       <button id="btn-fit" title="Zoom the map to the trip">Fit</button>
-      <button id="btn-itinerary" title="Day-by-day calendar of driving, charging and rests">Itinerary</button>
-      <button id="btn-recompute" title="Re-route every leg and refresh weather">Recompute</button>
+      <div class="menu">
+        <button id="btn-trip" aria-haspopup="true" aria-expanded="false" title="Rename, itinerary view, recompute">Trip ▾</button>
+        <div id="trip-menu" class="menu-list" role="menu" hidden>
+          <button id="btn-rename" role="menuitem" title="Give this trip a name">✎ Rename trip…</button>
+          <button id="btn-itinerary" role="menuitem" title="Day-by-day calendar of driving, charging and rests">🗓 Itinerary view</button>
+          <button id="btn-recompute" role="menuitem" title="Re-route every leg and refresh weather">↻ Recompute routes</button>
+        </div>
+      </div>
       <div class="menu">
         <button id="btn-file" aria-haspopup="true" aria-expanded="false" title="New, import and export trips">File ▾</button>
         <div id="file-menu" class="menu-list" role="menu" hidden>
@@ -41,18 +46,27 @@
         </div>
       </div>
       <input type="file" id="file-import" accept=".json,application/json" hidden>
+      <button id="btn-settings" title="Settings">⚙</button>
+      <button id="btn-help" title="Help &amp; contest rules">?</button>
     </div>
   </header>
   <main>
     <aside id="sidebar">
-      <nav class="tabs" role="tablist">
-        <button id="tab-trip" class="active" role="tab" aria-selected="true">Trip</button>
-        <button id="tab-settings" role="tab" aria-selected="false">Settings</button>
-        <button id="tab-help" role="tab" aria-selected="false">Help</button>
-      </nav>
-      <section id="panel-trip" class="panel" role="tabpanel"></section>
-      <section id="panel-settings" class="panel" role="tabpanel" hidden></section>
-      <section id="panel-help" class="panel" role="tabpanel" hidden>
+      <section id="panel-trip" class="panel"></section>
+    </aside>
+    <div id="map" role="application" aria-label="Map"></div>
+    <div id="itinerary" hidden aria-label="Itinerary"></div>
+  </main>
+  <dialog id="dialog" class="dialog" aria-label="Settings and help">
+    <div class="dialog-head">
+      <button id="dtab-settings" class="dtab active">Settings</button>
+      <button id="dtab-help" class="dtab">Help &amp; rules</button>
+      <span class="spacer"></span>
+      <button id="dialog-close" class="ghost" title="Close (Esc)">✕</button>
+    </div>
+    <div class="dialog-body">
+      <section id="panel-settings" class="panel"></section>
+      <section id="panel-help" class="panel" hidden>
         <h2>What this is</h2>
         <p>A planner for Tesla's <a href="https://www.tesla.com/support/tesla-app/charging-badges/contest" target="_blank" rel="noopener">2026 Free Supercharging Competition</a>, "Longest Trip" category: the longest continuous streak of <em>unique</em> Supercharger sites (a distinct location as shown in the app / navigation) where you begin a charging session at each new site within <b>24 hours of the previous session</b> — Tesla's page says "start time" in the category definition and "end of your previous session" in the trip explanation, so plan with the stricter start-anchored timer (Settings lets you switch). Repeat visits are allowed but neither count nor reset the timer. Sessions anywhere in the world count; you compete in the region where you visited the most unique sites. Ties break on total kWh. Competition period: 1 Jan 2026 00:01 – 31 Dec 2026 23:59 local time.</p>
         <p><b>Don't forget to enroll:</b> enable "Share Charging Data with Tesla App" in the vehicle settings, open the 2026 Passport in the Tesla app before 1 Jan 2027 (enrollment opens December 2026), and open it again after your last Supercharger session so every session is counted. Vehicles that already have free Supercharging and commercial-use vehicles are not eligible.</p>
@@ -88,10 +102,8 @@
         <p>Sites: <a href="https://supercharge.info" target="_blank" rel="noopener">supercharge.info</a> (community database, refresh with <code>tools/fetch_chargers.py</code>). Routing: OSRM demo server (fair use, self-host for heavy use). Weather: Open-Meteo. Elevation: Valhalla (FOSSGIS OSM demo), Open-Meteo as fallback. Search: Photon / Nominatim. Map: OpenStreetMap / CARTO.</p>
         <p class="muted">Not affiliated with Tesla. Verify the rules on Tesla's page; all rule parameters are editable in Settings.</p>
       </section>
-    </aside>
-    <div id="map" role="application" aria-label="Map"></div>
-    <div id="itinerary" hidden aria-label="Itinerary"></div>
-  </main>
+    </div>
+  </dialog>
   <div id="toast" class="toast" role="status"></div>
 </div>
 <script src="vendor/leaflet/leaflet.js"></script>

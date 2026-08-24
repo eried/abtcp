@@ -130,6 +130,23 @@ def file_menu(page, item_id):
     page.click(f"#{item_id}")
 
 
+def trip_menu(page, item_id):
+    """Open the Trip menu and click one of its items."""
+    page.click("#btn-trip")
+    page.wait_for_selector(f"#{item_id}:visible", timeout=5000)
+    page.click(f"#{item_id}")
+
+
+def open_settings(page):
+    page.click("#btn-settings")
+    page.wait_for_selector("#panel-settings [data-setting]", timeout=5000)
+
+
+def close_dialog(page):
+    page.click("#dialog-close")
+    page.wait_for_function("!document.getElementById('dialog').open", timeout=5000)
+
+
 def set_rest(page, idx, hours, sentry):
     page.eval_on_selector(f'.stop[data-index="{idx}"] input.rest-sentry', f"e => {{ e.checked = {str(sentry).lower()}; }}")
     set_value(page, f'.stop[data-index="{idx}"] input.rest-hours', str(hours))
@@ -201,9 +218,9 @@ def test_plan_export_import(page, url, log):
     assert "missed" in page.locator('.stop[data-index="1"] .deadline').text_content()
 
     # --- settings: 48 h window heals it; value persists
-    page.click("#tab-settings")
+    open_settings(page)
     set_value(page, '[data-setting="rules.windowH"]', "48")
-    page.click("#tab-trip")
+    close_dialog(page)
     assert "in a row" in page.text_content("#counter-streak")
     streak_text = page.text_content("#counter-streak")
     arrival2 = page.locator('.stop[data-index="1"] .arrival-soc').text_content()
@@ -230,9 +247,9 @@ def test_plan_export_import(page, url, log):
     assert page.locator('.stop[data-index="1"] .arrival-soc').text_content() == arrival2
     assert page.text_content("#counter-streak") == streak_text
     assert not [u for u in log if "/route/v1/" in u], "no re-routing after reload"
-    page.click("#tab-settings")
+    open_settings(page)
     assert page.input_value('[data-setting="rules.windowH"]') == "48"
-    page.click("#tab-trip")
+    close_dialog(page)
 
     # --- new trip asks with a browser confirm; import restores everything
     page.once("dialog", lambda d: d.dismiss())
@@ -246,9 +263,9 @@ def test_plan_export_import(page, url, log):
     wait_legs(page)
     assert page.locator('.stop[data-index="1"] .arrival-soc').text_content() == arrival2
     assert page.text_content("#counter-streak") == streak_text
-    page.click("#tab-settings")
+    open_settings(page)
     assert page.input_value('[data-setting="rules.windowH"]') == "48"
-    page.click("#tab-trip")
+    close_dialog(page)
 
     # --- garbage import is rejected with a toast, state untouched
     bad = OUT / "bad.json"
@@ -309,7 +326,7 @@ def test_plan_export_import(page, url, log):
     # --- hovering a suggestion highlights that charger on the map
     page.hover(".candidate[data-site]")
     page.wait_for_function("window.__abtcp.map.highlightCount() > 0", timeout=5000)
-    page.hover("#trip-name")
+    page.hover("#start-name")
     page.wait_for_function("window.__abtcp.map.highlightCount() === 0", timeout=5000)
 
     # --- adding a stop keeps the sidebar scroll position
@@ -376,7 +393,7 @@ def test_plan_export_import(page, url, log):
     page.wait_for_timeout(150)
 
     # --- itinerary calendar view
-    page.click("#btn-itinerary")
+    trip_menu(page, "btn-itinerary")
     page.wait_for_selector(".itin-ev", timeout=5000)
     assert page.locator(".itin-ev.drive").count() >= 3, "drive blocks"
     assert page.locator(".itin-ev.charge").count() >= 2, "charge blocks"
@@ -392,6 +409,10 @@ def test_plan_export_import(page, url, log):
     assert page.evaluate("[...document.querySelectorAll('.itin-ev')].every(e => e.getBoundingClientRect().height >= 20)"), "unreadably small itinerary blocks"
     page.locator(".itin-ev").first.click()
     page.wait_for_function("document.getElementById('itinerary').hidden === true", timeout=5000)
+    # renaming lives in the Trip menu now
+    page.once("dialog", lambda d: d.accept("Renamed trip"))
+    trip_menu(page, "btn-rename")
+    page.wait_for_function("window.__abtcp.store.trip.meta.name === 'Renamed trip'", timeout=5000)
 
     # --- popup of a planned charger offers Remove stop
     sid = page.evaluate("window.__abtcp.store.trip.stops[2].siteId")
@@ -436,13 +457,14 @@ def test_plan_export_import(page, url, log):
     page.click("#chip-all")
     page.wait_for_function(f"window.__abtcp.map.visibleCount() === {total_visible}", timeout=5000)
 
-    # --- iconic badge table in Help
-    page.click("#tab-help")
+    # --- iconic badge table in Help (now a dialog tab)
+    page.click("#btn-help")
+    page.wait_for_selector("#panel-help:visible", timeout=5000)
     assert page.locator(".iconic-table").count() >= 3, "badge tables per region"
     help_text = page.text_content("#iconic-table")
     for name in ("Dombås", "Honningsvåg", "Stonehenge", "Great Barrier Reef"):
         assert name in help_text, name
-    page.click("#tab-trip")
+    close_dialog(page)
 
     # --- replace a stop from the candidates, keeping its rest
     set_rest(page, 0, 2, True)
