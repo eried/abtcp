@@ -290,6 +290,15 @@ async function main() {
       }
     }
     map.setRoute(legs);
+    // show where routes are still being fetched (or failed) instead of leaving a gap
+    const pending = [];
+    let prevNode = trip.start;
+    for (const r of tl.stops) {
+      if (r.leg.status !== 'ok') pending.push({ from: prevNode, to: r.stop, kind: r.leg.status });
+      prevNode = r.stop;
+    }
+    if (trip.destination && tl.destination && tl.destination.leg.status !== 'ok') pending.push({ from: prevNode, to: trip.destination, kind: tl.destination.leg.status });
+    map.setPending(pending);
     map.setStops({
       start: { ...trip.start, batt: { arr: +trip.start.soc, dep: +trip.start.soc, cls: socClass(+trip.start.soc, trip.settings.reserveSoc) } },
       stops: tl.stops.map(r => ({ id: r.stop.id, lat: r.stop.lat, lng: r.stop.lng, siteId: r.stop.siteId ?? null, name: r.stop.name, cls: r.stop.kind === 'point' ? 'point' : (r.session && r.session.broken) ? 'broken' : '', batt: { arr: r.arrivalSoc, dep: r.departSoc, cls: socClass(r.arrivalSoc, trip.settings.reserveSoc) }, tooltip: `${r.i + 1}. ${r.stop.name} · arrive ${fmt.clock(r.arrival)} at ${fmt.pct(r.arrivalSoc)} → leave at ${fmt.pct(r.departSoc)}` })),

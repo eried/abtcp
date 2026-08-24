@@ -330,6 +330,14 @@ def test_plan_export_import(page, url, log):
     wait_legs(page)
     assert page.locator(".stop-icon .pass").count() == 0
 
+    # --- provisional dashed lines while routes are missing, cleared once routed
+    assert page.evaluate("window.__abtcp.map.pendingCount()") == 0, "no pending lines when every leg is routed"
+    page.evaluate("window.__abtcp.map.setPending([{ from: { lat: 69.6, lng: 18.9 }, to: { lat: 69.3, lng: 20.2 }, kind: 'pending' }])")
+    assert page.evaluate("window.__abtcp.map.pendingCount()") == 1
+    assert page.evaluate("!!document.querySelector('path.pending-leg')"), "animated dashed placeholder drawn"
+    page.evaluate("window.__abtcp.store.updateQuiet(() => {})")  # a render clears it (no undo entry)
+    page.wait_for_function("window.__abtcp.map.pendingCount() === 0", timeout=5000)
+
     # --- floating map actions: hover a planned stop, then remove it from there
     n_before = page.locator(".stop[data-id]").count()
     box = page.evaluate("(() => { const el = [...document.querySelectorAll('.leaflet-marker-pane .stop-icon')].find(e => e.querySelector('.n') && e.querySelector('.n').textContent === '1' && !e.className.includes('start')); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + 8 }; })()")

@@ -257,7 +257,7 @@ main { display: flex; flex: 1; min-height: 0; }
 .dialog-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .dialog-body .panel { padding: 12px 16px 24px; overflow: visible; flex: none; min-height: 0; }
 .dialog-body .panel[hidden] { display: none; }
-#btn-settings, #btn-file { min-width: 36px; font-size: 15px; line-height: 1; }
+#btn-settings, #btn-file, #btn-fit { min-width: 36px; font-size: 15px; line-height: 1; }
 
 /* Floating map actions on hover */
 .map-actions { position: absolute; z-index: 700; display: flex; gap: 3px; padding: 3px; background: rgba(11,15,20,.95); border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 6px 20px rgba(0,0,0,.55); }
@@ -316,3 +316,7 @@ main { display: flex; flex: 1; min-height: 0; }
 .busy-log li { padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .busy-foot { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .busy-foot .busy-elapsed { flex: 1; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Provisional straight line while a leg is routing (marching ants), red if the route failed */
+.pending-leg { animation: dashmove 700ms linear infinite; }
+.failed-leg { opacity: .85; }

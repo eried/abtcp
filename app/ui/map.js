@@ -33,6 +33,7 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
   const hlLayer = L.layerGroup().addTo(map);
   const hintLayer = L.layerGroup().addTo(map);
   const leaderLayer = L.layerGroup().addTo(map);
+  const pendingLayer = L.layerGroup().addTo(map);
   let replaceAnchor = null;
   const handlers = {};
   const on = (ev, fn) => { (handlers[ev] ||= []).push(fn); };
@@ -305,6 +306,20 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
 
   function hintCount() { return hintLayer.getLayers().length; }
 
+  /** Straight placeholder between two points while its road route is being fetched. */
+  function setPending(items) {
+    pendingLayer.clearLayers();
+    for (const it of items || []) {
+      const failed = it.kind === 'failed';
+      L.polyline([[it.from.lat, it.from.lng], [it.to.lat, it.to.lng]], {
+        color: failed ? '#dc2626' : '#60a5fa', weight: 2.5, dashArray: '10 10', opacity: 0.95,
+        className: failed ? 'failed-leg' : 'pending-leg', interactive: false, renderer: L.svg(),
+      }).addTo(pendingLayer);
+    }
+  }
+
+  function pendingCount() { return pendingLayer.getLayers().length; }
+
   function fitTo(points) {
     const pts = points.filter(p => p && Number.isFinite(p[0]) && Number.isFinite(p[1]));
     if (pts.length >= 2) map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 11 });
@@ -383,5 +398,5 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
     return n;
   }
 
-  return { map, setTiles, setSites, restyle, setRoute, setStops, setCandidates, fitTo, openSite, panToShow, applyFilter, highlight, highlightCount, setReplaceMode, hintCount, visibleCount, isVisible, pinsVisible, pinsTotal, hideActions, on, closePopup: () => map.closePopup(), size: () => markers.size };
+  return { map, setTiles, setSites, restyle, setRoute, setStops, setCandidates, fitTo, openSite, panToShow, applyFilter, highlight, highlightCount, setReplaceMode, hintCount, setPending, pendingCount, visibleCount, isVisible, pinsVisible, pinsTotal, hideActions, on, closePopup: () => map.closePopup(), size: () => markers.size };
 }
