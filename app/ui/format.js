@@ -24,6 +24,11 @@ export const fmt = {
     const d = new Date(ms);
     return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   },
+  short: ms => {
+    if (ms == null || !Number.isFinite(ms)) return '–';
+    const d = new Date(ms);
+    return `${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  },
   day: ms => {
     if (ms == null || !Number.isFinite(ms)) return '–';
     const d = new Date(ms);

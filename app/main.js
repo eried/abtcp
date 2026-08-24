@@ -226,13 +226,14 @@ async function main() {
     setCounter('counter-unique', String(S.uniqueCounted) + (S.newForYear !== S.uniqueCounted ? ` (${S.newForYear} new)` : ''), `${S.uniqueCounted} unique Supercharger sites in this trip · ${S.newForYear} new for the year`);
     const streakEl = $('counter-streak');
     if (S.uniqueCounted === 0) { setCounter('counter-streak', '–', 'No charging sessions planned yet'); streakEl.parentElement.className = 'counter wide'; }
-    else if (S.firstBreakIndex >= 0) { setCounter('counter-streak', `broken #${S.firstBreakIndex + 1} · best ${S.longestStreak}`, `The 24 h window is missed at stop #${S.firstBreakIndex + 1}; longest unbroken run: ${S.longestStreak} sites`); streakEl.parentElement.className = 'counter wide bad'; }
+    else if (S.firstBreakIndex >= 0) { setCounter('counter-streak', `✗ broken #${S.firstBreakIndex + 1}`, `The 24 h window is missed at stop #${S.firstBreakIndex + 1}; longest unbroken run: ${S.longestStreak} sites`); streakEl.parentElement.className = 'counter wide bad'; }
     else { setCounter('counter-streak', `${S.longestStreak} in a row ✓`, `${S.longestStreak} unique sites chained without missing the 24 h window`); streakEl.parentElement.className = 'counter wide ok'; }
-    setCounter('counter-deadline', S.nextDeadline ? fmt.time(S.nextDeadline) : '–', S.nextDeadline ? `Start charging at a new site before ${fmt.time(S.nextDeadline)} to keep the streak` : 'No session yet');
+    setCounter('counter-deadline', S.nextDeadline ? fmt.short(S.nextDeadline) : '–', S.nextDeadline ? `Start charging at a new site before ${fmt.time(S.nextDeadline)} to keep the streak` : 'No session yet');
     setCounter('counter-km', fmt.km(S.totalKm), `${Math.round(S.totalKm)} km of driving in this plan`);
     setCounter('counter-time', fmt.h(S.totalTimeH), `${fmt.h(S.totalDriveH)} driving · ${fmt.h(S.chargeH)} charging · ${fmt.h(S.totalTimeH)} total`);
-    setCounter('counter-kwh', fmt.kwh(S.kwhBilled), `${fmt.kwh(S.kwhBilled)} supercharged — the contest tie-breaker`);
-    setCounter('counter-eta', trip.stops.length || trip.destination ? `${fmt.time(S.eta)} · ${fmt.pct(S.endSoc)}` : '–', 'Arrival time and battery at the end of the plan');
+    setCounter('counter-kwh', `${Math.round(S.kwhBilled)} kWh`, `${fmt.kwh(S.kwhBilled)} supercharged — the contest tie-breaker`);
+    setCounter('counter-eta', trip.stops.length || trip.destination ? `${fmt.short(S.eta)}` : '–', trip.stops.length || trip.destination ? `Arrive ${fmt.time(S.eta)} at ${fmt.pct(S.endSoc)}` : 'Arrival time and battery at the end of the plan');
+    const etaEl = $('counter-eta'); etaEl.nextElementSibling.textContent = trip.stops.length || trip.destination ? `arrive · ${Math.round(S.endSoc)} %` : 'arrive';
     $('btn-export').disabled = false;
     $('btn-undo').disabled = !store.canUndo();
     $('btn-redo').disabled = !store.canRedo();
