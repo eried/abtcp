@@ -308,13 +308,27 @@ def test_plan_export_import(page, url, log):
     assert page.locator(".stop[data-id] .batt").count() == 2
     assert page.locator("#dest-card .batt").count() == 1
 
-    # --- map filter chips
+    # --- map filter: All | Reachable | Iconic (trip sites always visible)
+    trip_visible = "window.__abtcp.store.trip.stops.filter(s => s.siteId != null).every(s => window.__abtcp.map.isVisible(s.siteId))"
     total_visible = page.evaluate("window.__abtcp.map.visibleCount()")
     page.click("#chip-iconic")
     page.wait_for_function(f"window.__abtcp.map.visibleCount() < {total_visible}", timeout=5000)
     assert page.evaluate("window.__abtcp.map.visibleCount()") > 0, "iconic sites remain"
-    page.click("#chip-iconic")
+    assert page.evaluate(trip_visible), "trip sites stay visible in Iconic mode"
+    page.click("#chip-reach")
+    page.wait_for_timeout(400)
+    assert page.evaluate(trip_visible), "trip sites stay visible in Reachable mode"
+    assert page.evaluate("window.__abtcp.map.visibleCount()") < total_visible
+    page.click("#chip-all")
     page.wait_for_function(f"window.__abtcp.map.visibleCount() === {total_visible}", timeout=5000)
+
+    # --- iconic badge table in Help
+    page.click("#tab-help")
+    assert page.locator(".iconic-table").count() >= 3, "badge tables per region"
+    help_text = page.text_content("#iconic-table")
+    for name in ("Dombås", "Honningsvåg", "Stonehenge", "Great Barrier Reef"):
+        assert name in help_text, name
+    page.click("#tab-trip")
 
     # --- replace a stop from the candidates, keeping its rest
     set_rest(page, 0, 2, True)

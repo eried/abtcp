@@ -34,9 +34,10 @@ async function main() {
     setStatus('No database');
     return;
   }
+  let iconicDoc = [];
   try {
     const ir = await fetch('data/iconic.json');
-    if (ir.ok) applyIconic(db, await ir.json());
+    if (ir.ok) { iconicDoc = await ir.json(); applyIconic(db, iconicDoc); }
   } catch { /* the iconic list is optional */ }
   setStatus('');
 
@@ -49,16 +50,18 @@ async function main() {
   const map = createMap({ el: $('map'), tiles: store.trip.settings.tiles });
   const sidebar = createSidebar({ el: $('panel-trip'), store, db, planner, geocode, map, toast, setStatus });
 
-  // ---------- map filter chips ----------
+  // ---------- map filter: All | Reachable | Iconic ----------
   const filterBar = document.createElement('div');
   filterBar.id = 'map-filters';
-  filterBar.innerHTML = '<button class="chip" id="chip-reach" title="Only sites the car can reach right now from the end of the plan (straight-line estimate, keeping the reserve)">⚡ reachable</button><button class="chip" id="chip-iconic" title="Only Iconic Charger badge sites">🏅 iconic</button>';
+  filterBar.innerHTML = '<button class="chip active" id="chip-all" title="Show every charger">All</button>'
+    + '<button class="chip" id="chip-reach" title="Only sites the car can reach right now from the end of the plan (straight-line estimate, reserve kept). Your own stops, start, destination and route always stay visible.">⚡ Reachable</button>'
+    + '<button class="chip" id="chip-iconic" title="Only Iconic Charger badge sites. Your own stops, start, destination and route always stay visible.">🏅 Iconic</button>';
   $('map').appendChild(filterBar);
   ['dblclick', 'mousedown'].forEach(ev => filterBar.addEventListener(ev, e => e.stopPropagation()));
-  const mapFilters = { reach: false, iconic: false };
+  let mapFilterMode = 'all';
   let filterSig = '';
   function applyMapFilters() {
-    if (!mapFilters.reach && !mapFilters.iconic) { map.applyFilter(null); return; }
+    if (mapFilterMode === 'all') { map.applyFilter(null); return; }
     const t = store.trip;
     let head = t.start;
     let soc = +t.start.soc;
@@ -72,18 +75,16 @@ async function main() {
     const rangeM = Math.max(0, soc - t.settings.reserveSoc) / 100 * t.car.usableKwh / (quickWhKm(t.car, temp, t.settings.marginPct) / 1000) / 1.25 * 1000;
     map.applyFilter(site => {
       if (inTrip.has(site.id)) return true;
-      if (mapFilters.iconic && !site.iconic) return false;
-      if (mapFilters.reach && haversineM(head.lat, head.lng, site.lat, site.lng) > rangeM) return false;
-      return true;
+      if (mapFilterMode === 'iconic') return !!site.iconic;
+      return haversineM(head.lat, head.lng, site.lat, site.lng) <= rangeM;
     });
   }
   filterBar.addEventListener('click', e => {
     e.stopPropagation();
     const b = e.target.closest('.chip');
     if (!b) return;
-    const k = b.id === 'chip-reach' ? 'reach' : 'iconic';
-    mapFilters[k] = !mapFilters[k];
-    b.classList.toggle('active', mapFilters[k]);
+    mapFilterMode = b.id === 'chip-reach' ? 'reach' : b.id === 'chip-iconic' ? 'iconic' : 'all';
+    for (const c of filterBar.querySelectorAll('.chip')) c.classList.toggle('active', c === b);
     applyMapFilters();
   });
 
@@ -116,7 +117,7 @@ async function main() {
   function loadSites() {
     const show = new Set(store.trip.settings.showStatuses);
     map.setSites(db.sites.filter(s => show.has(s.status)), classify, popupHtml);
-    if (mapFilters.reach || mapFilters.iconic) applyMapFilters();
+    if (mapFilterMode !== 'all') applyMapFilters();
   }
   loadSites();
 
@@ -142,6 +143,38 @@ async function main() {
     onCandidates: () => sidebar.refreshCandidates(true),
     rerender: paintSettings,
   });
+
+  // ---------- iconic badge table (Help tab) ----------
+  function renderIconicTable(el) {
+    if (!el) return;
+    const regions = ['Europe', 'North America', 'Asia', 'Oceania'];
+    const groups = new Map();
+    for (const e of iconicDoc) {
+      if (!e.badge) continue;
+      const k = `${e.region || 'Other'}|${e.badge}`;
+      if (!groups.has(k)) groups.set(k, { badge: e.badge, region: e.region || 'Other', sites: [], guess: false, unmapped: !!e.unmapped });
+      const g = groups.get(k);
+      if (e.id != null) {
+        const site = db.byId(e.id);
+        if (site) { g.sites.push(site); if (e.guess) g.guess = true; }
+      }
+    }
+    let html = '';
+    for (const reg of regions) {
+      const rows = [...groups.values()].filter(g => g.region === reg).sort((a, b) => a.badge.localeCompare(b.badge));
+      if (!rows.length) continue;
+      html += `<h3 style="margin-top:12px">${reg}</h3><table class="iconic-table"><tr><th>Badge</th><th>Supercharger site</th><th>On map</th></tr>`;
+      for (const g of rows) {
+        const sites = g.sites.length
+          ? g.sites.map(site => `${esc(site.name)} <span class="muted">(${esc(site.country)})</span>`).join('<br>')
+          : '<span class="muted">site not identified yet — edit data/iconic.json</span>';
+        html += `<tr><td>🏅 ${esc(g.badge)}</td><td>${sites}</td><td>${g.sites.length ? (g.guess ? '✓ best guess' : '✓') : '—'}</td></tr>`;
+      }
+      html += '</table>';
+    }
+    el.innerHTML = html;
+  }
+  renderIconicTable($('iconic-table'));
 
   // ---------- tabs ----------
   const tabs = { trip: $('tab-trip'), settings: $('tab-settings'), help: $('tab-help') };

@@ -209,6 +209,13 @@ main { display: flex; flex: 1; min-height: 0; }
 .stop.replacing { outline: 2px dashed var(--blue); }
 
 /* Map filter chips */
-#map-filters { position: absolute; top: 10px; right: 10px; z-index: 660; display: flex; gap: 6px; }
-#map-filters .chip { background: rgba(11,15,20,.92); border: 1px solid var(--line); color: var(--text); font-size: 12px; padding: 5px 10px; border-radius: 999px; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+#map-filters { position: absolute; top: 10px; right: 10px; z-index: 660; display: flex; }
+#map-filters .chip { background: rgba(11,15,20,.92); border: 1px solid var(--line); border-left-width: 0; color: var(--text); font-size: 12px; padding: 5px 11px; border-radius: 0; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+#map-filters .chip:first-child { border-radius: 999px 0 0 999px; border-left-width: 1px; }
+#map-filters .chip:last-child { border-radius: 0 999px 999px 0; }
 #map-filters .chip.active { background: var(--red); border-color: var(--red); color: #fff; font-weight: 600; }
+
+/* Iconic badge table (Help) */
+.iconic-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0 10px; }
+.iconic-table th, .iconic-table td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.iconic-table th { color: var(--muted); font-weight: 600; }
