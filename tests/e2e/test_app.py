@@ -123,6 +123,13 @@ def set_value(page, selector, value, event="change"):
     page.eval_on_selector(selector, f"e => {{ e.value = {json.dumps(value)}; e.dispatchEvent(new Event('input', {{bubbles: true}})); e.dispatchEvent(new Event({json.dumps(event)}, {{bubbles: true}})); }}")
 
 
+def file_menu(page, item_id):
+    """Open the File menu and click one of its items."""
+    page.click("#btn-file")
+    page.wait_for_selector(f"#{item_id}:visible", timeout=5000)
+    page.click(f"#{item_id}")
+
+
 def set_rest(page, idx, hours, sentry):
     page.eval_on_selector(f'.stop[data-index="{idx}"] input.rest-sentry', f"e => {{ e.checked = {str(sentry).lower()}; }}")
     set_value(page, f'.stop[data-index="{idx}"] input.rest-hours', str(hours))
@@ -203,7 +210,7 @@ def test_plan_export_import(page, url, log):
 
     # --- export
     with page.expect_download() as dl_info:
-        page.click("#btn-export")
+        file_menu(page, "btn-export")
     OUT.mkdir(exist_ok=True)
     exported = OUT / "exported-trip.json"
     dl_info.value.save_as(exported)
@@ -229,10 +236,10 @@ def test_plan_export_import(page, url, log):
 
     # --- new trip asks with a browser confirm; import restores everything
     page.once("dialog", lambda d: d.dismiss())
-    page.click("#btn-new")
+    file_menu(page, "btn-new")
     assert page.locator(".stop").count() == 2, "cancelled confirm keeps the trip"
     page.once("dialog", lambda d: d.accept())
-    page.click("#btn-new")
+    file_menu(page, "btn-new")
     page.wait_for_function("document.querySelectorAll('.stop').length === 0")
     page.set_input_files("#file-import", str(exported))
     page.wait_for_function("document.querySelectorAll('.stop').length === 2", timeout=15000)
@@ -461,6 +468,13 @@ def test_plan_export_import(page, url, log):
     wait_legs(page)
     assert page.evaluate("window.__abtcp.store.trip.stops[0].rest.hours") == 2, "rest preserved on map-click replace"
 
+    # --- the top bar keeps a stable geometry while the plan changes
+    probe = """(() => ({ top: Math.round(document.querySelector('.actions').getBoundingClientRect().top), height: Math.round(document.querySelector('.topbar').getBoundingClientRect().height), counters: document.querySelectorAll('.counter').length }))()"""
+    geom = page.evaluate(probe)
+    page.evaluate("window.__abtcp.store.update(t => { t.meta.name = 'a very long trip name that would stretch the bar'; })")
+    page.wait_for_timeout(200)
+    assert page.evaluate(probe) == geom, "top bar moved when the plan changed"
+
     assert not errors, errors
     page.screenshot(path=str(OUT / "final.png"))
 
@@ -476,7 +490,7 @@ def test_live_smoke(page, url, log):
     assert "km" in leg and "Wh/km" in leg and "Route failed" not in leg, leg
     assert "forecast" in leg or "archive" in leg, leg
     with page.expect_download() as dl_info:
-        page.click("#btn-export")
+        file_menu(page, "btn-export")
     OUT.mkdir(exist_ok=True)
     dl_info.value.save_as(OUT / "live-trip.json")
 

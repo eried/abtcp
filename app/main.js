@@ -222,19 +222,17 @@ async function main() {
     inTrip = new Set(trip.stops.map(s => s.siteId).filter(x => x != null));
     visitedSet = new Set(trip.visitedBefore || []);
 
-    $('counter-unique').textContent = String(S.uniqueCounted) + (S.newForYear !== S.uniqueCounted ? ` (${S.newForYear} new)` : '');
+    const setCounter = (id, text, title) => { const c = $(id); c.textContent = text; c.parentElement.title = title || text; };
+    setCounter('counter-unique', String(S.uniqueCounted) + (S.newForYear !== S.uniqueCounted ? ` (${S.newForYear} new)` : ''), `${S.uniqueCounted} unique Supercharger sites in this trip · ${S.newForYear} new for the year`);
     const streakEl = $('counter-streak');
-    if (S.uniqueCounted === 0) { streakEl.textContent = '–'; streakEl.parentElement.className = 'counter'; }
-    else if (S.firstBreakIndex >= 0) { streakEl.textContent = `broken at #${S.firstBreakIndex + 1} · best ${S.longestStreak}`; streakEl.parentElement.className = 'counter bad'; }
-    else { streakEl.textContent = `${S.longestStreak} in a row ✓`; streakEl.parentElement.className = 'counter ok'; }
-    const dlEl = $('counter-deadline');
-    dlEl.textContent = S.nextDeadline ? fmt.time(S.nextDeadline) : '–';
-    dlEl.parentElement.className = 'counter';
-    $('counter-km').textContent = fmt.km(S.totalKm);
-    $('counter-time').textContent = fmt.h(S.totalTimeH);
-    $('counter-kwh').textContent = fmt.kwh(S.kwhBilled);
-    $('counter-eta').textContent = trip.stops.length || trip.destination ? `${fmt.time(S.eta)} · ${fmt.pct(S.endSoc)}` : '–';
-    if (S.minSoc < 0) dlEl.parentElement.className = 'counter';
+    if (S.uniqueCounted === 0) { setCounter('counter-streak', '–', 'No charging sessions planned yet'); streakEl.parentElement.className = 'counter wide'; }
+    else if (S.firstBreakIndex >= 0) { setCounter('counter-streak', `broken #${S.firstBreakIndex + 1} · best ${S.longestStreak}`, `The 24 h window is missed at stop #${S.firstBreakIndex + 1}; longest unbroken run: ${S.longestStreak} sites`); streakEl.parentElement.className = 'counter wide bad'; }
+    else { setCounter('counter-streak', `${S.longestStreak} in a row ✓`, `${S.longestStreak} unique sites chained without missing the 24 h window`); streakEl.parentElement.className = 'counter wide ok'; }
+    setCounter('counter-deadline', S.nextDeadline ? fmt.time(S.nextDeadline) : '–', S.nextDeadline ? `Start charging at a new site before ${fmt.time(S.nextDeadline)} to keep the streak` : 'No session yet');
+    setCounter('counter-km', fmt.km(S.totalKm), `${Math.round(S.totalKm)} km of driving in this plan`);
+    setCounter('counter-time', fmt.h(S.totalTimeH), `${fmt.h(S.totalDriveH)} driving · ${fmt.h(S.chargeH)} charging · ${fmt.h(S.totalTimeH)} total`);
+    setCounter('counter-kwh', fmt.kwh(S.kwhBilled), `${fmt.kwh(S.kwhBilled)} supercharged — the contest tie-breaker`);
+    setCounter('counter-eta', trip.stops.length || trip.destination ? `${fmt.time(S.eta)} · ${fmt.pct(S.endSoc)}` : '–', 'Arrival time and battery at the end of the plan');
     $('btn-export').disabled = false;
     $('btn-undo').disabled = !store.canUndo();
     $('btn-redo').disabled = !store.canRedo();
@@ -296,6 +294,20 @@ async function main() {
       if (store.redo()) afterHistory('Redo');
     }
   });
+  // File menu
+  const fileBtn = $('btn-file');
+  const fileMenu = $('file-menu');
+  const closeMenu = () => { fileMenu.hidden = true; fileBtn.setAttribute('aria-expanded', 'false'); };
+  fileBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    const open = fileMenu.hidden;
+    fileMenu.hidden = !open;
+    fileBtn.setAttribute('aria-expanded', String(open));
+  });
+  fileMenu.addEventListener('click', () => setTimeout(closeMenu, 0));
+  document.addEventListener('click', e => { if (!fileMenu.hidden && !fileMenu.contains(e.target) && e.target !== fileBtn) closeMenu(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
+
   $('btn-fit').addEventListener('click', () => map.fitTo(sidebar.tripPoints()));
   $('btn-recompute').addEventListener('click', async () => {
     setStatus('Re-routing…');

@@ -18,12 +18,12 @@
     </div>
     <div class="counters" aria-label="Trip summary">
       <div class="counter"><b id="counter-unique">0</b><span>unique sites</span></div>
-      <div class="counter"><b id="counter-streak">–</b><span>streak</span></div>
-      <div class="counter"><b id="counter-deadline">–</b><span>next site by</span></div>
+      <div class="counter wide"><b id="counter-streak">–</b><span>streak</span></div>
+      <div class="counter wide"><b id="counter-deadline">–</b><span>next site by</span></div>
       <div class="counter"><b id="counter-km">0 km</b><span>distance</span></div>
       <div class="counter"><b id="counter-time">0 min</b><span>total time</span></div>
       <div class="counter"><b id="counter-kwh">0 kWh</b><span>supercharged</span></div>
-      <div class="counter"><b id="counter-eta">–</b><span>arrive</span></div>
+      <div class="counter wide"><b id="counter-eta">–</b><span>arrive</span></div>
     </div>
     <div class="actions">
       <span id="status" class="status" aria-live="polite"></span>
@@ -32,10 +32,15 @@
       <button id="btn-fit" title="Zoom the map to the trip">Fit</button>
       <button id="btn-itinerary" title="Day-by-day calendar of driving, charging and rests">Itinerary</button>
       <button id="btn-recompute" title="Re-route every leg and refresh weather">Recompute</button>
-      <button id="btn-import" title="Load a trip .json">Import</button>
+      <div class="menu">
+        <button id="btn-file" aria-haspopup="true" aria-expanded="false" title="New, import and export trips">File ▾</button>
+        <div id="file-menu" class="menu-list" role="menu" hidden>
+          <button id="btn-export" role="menuitem" title="Download this trip as .json">⭳ Export trip (.json)</button>
+          <button id="btn-import" role="menuitem" title="Load a trip .json">⭱ Import trip…</button>
+          <button id="btn-new" role="menuitem" class="danger" title="Start a new empty trip">✦ New trip…</button>
+        </div>
+      </div>
       <input type="file" id="file-import" accept=".json,application/json" hidden>
-      <button id="btn-export" title="Download this trip as .json">Export</button>
-      <button id="btn-new" class="danger" title="Start a new empty trip">New</button>
     </div>
   </header>
   <main>
