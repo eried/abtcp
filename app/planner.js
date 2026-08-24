@@ -208,9 +208,11 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
         let res = compute(store.trip).stops[insertAt];
         if (leg.status === 'ok' && res.arrivalSoc < S.reserveSoc && adaptive) {
           const need = Math.min(100, Math.ceil(res.leg.kwh / store.trip.car.usableKwh * 100 + S.reserveSoc + 2));
-          if (insertAt >= 1 && store.trip.stops[insertAt - 1].charge) store.update(t => { t.stops[insertAt - 1].charge.targetSoc = Math.max(t.stops[insertAt - 1].charge.targetSoc, need); });
-          else if (insertAt === 0) store.update(t => { t.start.soc = Math.max(t.start.soc, need); });
-          res = compute(store.trip).stops[insertAt];
+          if (need <= (S.maxChargeSoc ?? 100)) { // never plan a charge above the configured maximum
+            if (insertAt >= 1 && store.trip.stops[insertAt - 1].charge) store.update(t => { t.stops[insertAt - 1].charge.targetSoc = Math.max(t.stops[insertAt - 1].charge.targetSoc, need); });
+            else if (insertAt === 0) store.update(t => { t.start.soc = Math.max(t.start.soc, need); });
+            res = compute(store.trip).stops[insertAt];
+          }
         }
         if (leg.status === 'ok' && res.arrivalSoc >= S.reserveSoc) {
           placed = true;
@@ -226,5 +228,124 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
     return added;
   }
 
-  return { buildLeg, ensureLegs, pruneLegs, candidates, autoChain, averageWhKm };
+  /**
+   * Extra sites that fit between a and b, cheapest detour first (detour = road(a→c) + road(c→b)
+   * − road(a→b)). Sites not visited earlier this year rank ahead of ones that were.
+   */
+  async function gapCandidates(a, b, maxDetourKm, limit = 6) {
+    const trip = store.trip;
+    const inTrip = new Set(trip.stops.map(s => s.siteId).filter(x => x != null));
+    const visitedYear = new Set((trip.visitedBefore || []).map(Number));
+    const straightM = haversineM(a.lat, a.lng, b.lat, b.lng);
+    const mid = { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
+    const searchM = straightM / 2 + maxDetourKm * 1000;
+    const near = db.nearest(mid.lat, mid.lng, { n: 40, maxM: searchM, filter: s => db.isUsable(s) && !inTrip.has(s.id) });
+    if (!near.length) return [];
+    const sites = near.map(x => x.site);
+    const [fromA, fromB, base] = await Promise.all([osrm.table(a, sites), osrm.table(b, sites), osrm.table(a, [b])]);
+    const baseKm = base.distances[0] != null ? base.distances[0] / 1000 : null;
+    if (baseKm == null) return [];
+    const out = [];
+    sites.forEach((site, i) => {
+      const d1 = fromA.distances[i];
+      const d2 = fromB.distances[i];
+      if (d1 == null || d2 == null) return;
+      const detourKm = (d1 + d2) / 1000 - baseKm;
+      if (detourKm > maxDetourKm) return;
+      out.push({ site, detourKm: Math.max(0, detourKm), roadKm: d1 / 1000, visitedYear: visitedYear.has(site.id) });
+    });
+    out.sort((x, y) => (x.visitedYear - y.visitedYear) || (x.detourKm - y.detourKm));
+    return out.slice(0, limit);
+  }
+
+  /**
+   * Try to keep an inserted stop: both legs must route, and every state of charge must stay
+   * above the reserve without planning a charge above `cap` %. Returns false if it does not fit.
+   */
+  async function tryFit(a, b, stop, insertAt, cap, nextSocBefore = null) {
+    const S = store.trip.settings;
+    const usable = store.trip.car.usableKwh;
+    const tl = compute(store.trip);
+    const departTime = insertAt > 0 ? tl.stops[insertAt - 1].depart : tl.startTime;
+    const leg1 = await buildLeg(a, stop, { departTime });
+    if (leg1.status !== 'ok') return false;
+    const tl2 = compute(store.trip);
+    const leg2 = await buildLeg(stop, b, { departTime: tl2.stops[insertAt].depart });
+    if (leg2.status !== 'ok') return false;
+
+    let r = compute(store.trip).stops[insertAt];
+    if (r.arrivalSoc < S.reserveSoc) {
+      const need = Math.min(100, Math.ceil(r.leg.kwh / usable * 100 + S.reserveSoc + 2));
+      if (need > cap) return false; // would need a slow, high-state-of-charge session before it
+      if (insertAt >= 1 && store.trip.stops[insertAt - 1].charge) store.update(t => { t.stops[insertAt - 1].charge.targetSoc = Math.max(t.stops[insertAt - 1].charge.targetSoc, need); });
+      else if (insertAt === 0) store.update(t => { t.start.soc = Math.max(+t.start.soc, need); });
+      r = compute(store.trip).stops[insertAt];
+      if (r.arrivalSoc < S.reserveSoc) return false;
+    }
+
+    const after = compute(store.trip);
+    const next = after.stops[insertAt + 1] || after.destination;
+    if (next && next.leg && next.leg.status === 'ok' && next.arrivalSoc < S.reserveSoc) {
+      const needNext = Math.min(100, Math.ceil(next.leg.kwh / usable * 100 + S.reserveSoc + 2));
+      if (needNext <= cap) store.update(t => { t.stops[insertAt].charge.targetSoc = Math.max(t.stops[insertAt].charge.targetSoc, needNext); });
+      const check = compute(store.trip);
+      const nr = check.stops[insertAt + 1] || check.destination;
+      // Accept when the onward leg is fine, or at least no worse than before the insert: a gap
+      // that was already below reserve still benefits from an extra charging stop inside it.
+      if (nr && nr.arrivalSoc < S.reserveSoc && !(nextSocBefore != null && nr.arrivalSoc > nextSocBefore + 0.5)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * "Fill the gaps": walk every consecutive pair (start→stop, stop→stop, stop→destination) and
+   * insert extra Superchargers whose detour stays under `maxDetourKm` and that never force a
+   * charge above `maxChargeSoc` — otherwise the next candidate is tried. Repeats on the newly
+   * created gap, so one long leg can absorb several sites. Maximises unique sites per trip.
+   */
+  async function densify({ maxDetourKm = 25, maxAdds = 25, maxChargeSoc = null, onProgress = null, shouldStop = () => false } = {}) {
+    let added = 0;
+    let gap = 0;
+    while (added < maxAdds && !shouldStop()) {
+      const trip = store.trip;
+      const S = trip.settings;
+      const cap = maxChargeSoc ?? S.maxChargeSoc ?? 90;
+      const nodes = [trip.start, ...trip.stops, ...(trip.destination && trip.destination.lat != null ? [trip.destination] : [])];
+      if (gap >= nodes.length - 1) break;
+      const a = nodes[gap];
+      const b = nodes[gap + 1];
+      const cands = await gapCandidates(a, b, maxDetourKm);
+      let placed = false;
+      for (const c of cands) {
+        if (shouldStop()) break;
+        const insertAt = gap;
+        const prevId = insertAt >= 1 ? store.trip.stops[insertAt - 1].id : null;
+        const prevTarget = prevId ? (store.trip.stops[insertAt - 1].charge || {}).targetSoc ?? null : null;
+        const startSoc = +store.trip.start.soc;
+        const stop = newStop({ site: c.site, targetSoc: S.defaultTargetSoc });
+        const before = compute(store.trip);
+        const nextSocBefore = (before.stops[insertAt] || before.destination || {}).arrivalSoc ?? null;
+        store.update(t => { t.stops.splice(insertAt, 0, stop); });
+        if (await tryFit(a, b, stop, insertAt, cap, nextSocBefore)) {
+          placed = true;
+          added++;
+          if (onProgress) onProgress(added, maxAdds, stop, c);
+          break;
+        }
+        store.update(t => { // undo the trial, including any charge raise it applied
+          t.stops = t.stops.filter(x => x.id !== stop.id);
+          if (prevId && prevTarget != null) {
+            const ps = t.stops.find(x => x.id === prevId);
+            if (ps && ps.charge) ps.charge.targetSoc = prevTarget;
+          }
+          t.start.soc = startSoc;
+        });
+      }
+      if (!placed) gap++;
+    }
+    pruneLegs();
+    return added;
+  }
+
+  return { buildLeg, ensureLegs, pruneLegs, candidates, autoChain, densify, gapCandidates, averageWhKm };
 }

@@ -30,6 +30,7 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
   const routeLayer = L.layerGroup().addTo(map);
   const candLayer = L.layerGroup().addTo(map);
   const stopLayer = L.layerGroup().addTo(map);
+  const hlLayer = L.layerGroup().addTo(map);
   const handlers = {};
   const on = (ev, fn) => { (handlers[ev] ||= []).push(fn); };
   const emit = (ev, data) => (handlers[ev] || []).forEach(fn => fn(data));
@@ -128,6 +129,19 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
     }
   }
 
+  /** Ring a site while the pointer hovers its row in the sidebar; null clears. */
+  function highlight(id) {
+    hlLayer.clearLayers();
+    if (id == null) return;
+    const e = markers.get(Number(id));
+    if (!e) return;
+    const ll = e.marker.getLatLng();
+    L.circleMarker(ll, { renderer, radius: 14, color: '#facc15', weight: 3, fill: false, opacity: 1, interactive: false }).addTo(hlLayer);
+    L.circleMarker(ll, { renderer, radius: 7, color: '#facc15', weight: 2, fill: false, opacity: 0.8, interactive: false }).addTo(hlLayer);
+  }
+
+  function highlightCount() { return hlLayer.getLayers().length; }
+
   function fitTo(points) {
     const pts = points.filter(p => p && Number.isFinite(p[0]) && Number.isFinite(p[1]));
     if (pts.length >= 2) map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 11 });
@@ -206,5 +220,5 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
     return n;
   }
 
-  return { map, setTiles, setSites, restyle, setRoute, setStops, setCandidates, fitTo, openSite, panToShow, applyFilter, visibleCount, isVisible, pinsVisible, pinsTotal, on, closePopup: () => map.closePopup(), size: () => markers.size };
+  return { map, setTiles, setSites, restyle, setRoute, setStops, setCandidates, fitTo, openSite, panToShow, applyFilter, highlight, highlightCount, visibleCount, isVisible, pinsVisible, pinsTotal, on, closePopup: () => map.closePopup(), size: () => markers.size };
 }

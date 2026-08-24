@@ -46,7 +46,9 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     }
     pendingRender = false;
     const keep = active && el.contains(active) && active.id ? { id: active.id, value: active.value, pos: active.selectionStart } : null;
+    const scrollTop = el.scrollTop;
     el.innerHTML = html();
+    el.scrollTop = scrollTop;
     if (keep) {
       const again = el.querySelector(`#${keep.id}`);
       if (again) { again.focus(); if (again.type === 'text') { again.value = keep.value; try { again.setSelectionRange(keep.pos, keep.pos); } catch { /* ignore */ } } }
@@ -222,6 +224,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
       <header><h3>${replaceId ? 'Replacing a stop — pick a site' : `Next stop from ${esc(from)}`}</h3><label title="Only sites closer to the destination"><input type="checkbox" id="cand-toward" ${trip.settings.candidates.toward ? 'checked' : ''} ${trip.destination ? '' : 'disabled'}> toward</label><button class="ghost" id="btn-cand-refresh" title="Refresh">↻</button></header>
       <div id="candidates">${candidatesListHtml()}</div>
       <div class="autochain"><input type="number" id="autochain-n" value="5" min="1" max="80" aria-label="Number of stops to add">${chaining ? '<button id="btn-chain-stop" class="danger">Stop</button>' : '<button id="btn-autochain" class="primary" title="Greedily add the nearest new sites (toward the destination if set)">Auto-chain stops</button>'}<span class="status" id="autochain-status"></span></div>
+      <div class="autochain densify"><label title="Extra kilometres a site may add to a leg to be worth inserting">detour ≤ <input type="number" id="densify-km" value="25" min="1" max="200"> km</label><button id="btn-densify" title="Insert every extra Supercharger that fits between the stops you already have (and before the destination) without exceeding the detour, and without forcing a charge above the maximum set in Settings — maximises unique sites">⊕ Fill gaps with more sites</button></div>
     </section>`;
   }
 
@@ -387,6 +390,30 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     setStatus('');
   }
 
+  async function runDensify() {
+    if (chaining) return;
+    chaining = true;
+    stopChain = false;
+    const km = Math.max(1, Number(el.querySelector('#densify-km')?.value) || 25);
+    const cap = store.trip.settings.maxChargeSoc ?? 90;
+    renderCandidates();
+    let added = 0;
+    try {
+      added = await planner.densify({
+        maxDetourKm: km,
+        maxAdds: 40,
+        shouldStop: () => stopChain,
+        onProgress: (a, max, stop, best) => setStatus(`Fill gaps ${a}: ${stop.name} (+${Math.round(best.detourKm)} km)`),
+      });
+      toast.success(added ? `Inserted ${added} extra site${added === 1 ? '' : 's'} (detour ≤ ${km} km, never charging above ${cap} %)` : `Nothing fits within ${km} km detour and a ${cap} % charge cap — raise either in Settings`);
+    } catch (e) {
+      toast.error(`Fill gaps failed: ${(e && e.message) || e}`);
+    }
+    chaining = false;
+    setStatus('');
+    refreshCandidates(true);
+  }
+
   async function runAutoChain() {
     if (chaining) return;
     chaining = true;
@@ -518,6 +545,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     if (b.id === 'btn-dest-clear') { setDestination(null); render(tl); return; }
     if (b.id === 'btn-cand-refresh') { refreshCandidates(true); return; }
     if (b.id === 'btn-autochain') { runAutoChain(); return; }
+    if (b.id === 'btn-densify') { runDensify(); return; }
     if (b.id === 'btn-chain-stop') { stopChain = true; b.disabled = true; return; }
     if (b.dataset.act === 'fill-dest') { runAutoChain(); return; }
     const card = b.closest('.stop');
@@ -541,6 +569,19 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
       refreshCandidates(true);
     }
   });
+
+  el.addEventListener('mouseover', e => {
+    const c = e.target.closest('.candidate[data-site]');
+    if (c) { map.highlight(Number(c.dataset.site)); return; }
+    const card = e.target.closest('.stop[data-id]');
+    if (card) {
+      const s = store.trip.stops.find(x => x.id === card.dataset.id);
+      map.highlight(s && s.siteId != null ? s.siteId : null);
+      return;
+    }
+    map.highlight(null);
+  });
+  el.addEventListener('mouseleave', () => map.highlight(null));
 
   map.on('mapClick', ({ lat, lng }) => {
     if (!pickMode) return;

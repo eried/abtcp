@@ -70,6 +70,7 @@ export function renderSettings(el, trip, db) {
       ${num('Reserve at arrival', s('reserveSoc'), S.reserveSoc, { min: 0, max: 50, unit: '%' })}
       ${num('Consumption margin', s('marginPct'), S.marginPct, { min: -20, max: 50, unit: '% (car estimate is optimistic)' })}
       ${num('Default charge target', s('defaultTargetSoc'), S.defaultTargetSoc, { min: 5, max: 100, unit: '%' })}
+      ${num('Never charge above', s('maxChargeSoc'), S.maxChargeSoc, { min: 50, max: 100, unit: '% (above this the curve crawls)' })}
       ${num('Plug-in overhead', s('plugOverheadMin'), S.plugOverheadMin, { min: 0, unit: 'min per stop' })}
       ${num('Ferry wait', s('ferryWaitMin'), S.ferryWaitMin, { min: 0, unit: 'min per crossing' })}
     </div>

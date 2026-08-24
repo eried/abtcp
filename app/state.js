@@ -11,6 +11,7 @@ export function defaultSettings() {
     reserveSoc: 10,
     marginPct: 5,
     defaultTargetSoc: 60,
+    maxChargeSoc: 90,
     sentry: { onPctH: 0.2, offPctH: 0.04, coldFactor: 1.3 },
     ferryWaitMin: 30,
     plugOverheadMin: 3,

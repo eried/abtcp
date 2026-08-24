@@ -299,6 +299,43 @@ def test_plan_export_import(page, url, log):
     wait_legs(page)
     assert page.locator(".stop-icon .pass").count() == 0
 
+    # --- hovering a suggestion highlights that charger on the map
+    page.hover(".candidate[data-site]")
+    page.wait_for_function("window.__abtcp.map.highlightCount() > 0", timeout=5000)
+    page.hover("#trip-name")
+    page.wait_for_function("window.__abtcp.map.highlightCount() === 0", timeout=5000)
+
+    # --- adding a stop keeps the sidebar scroll position
+    page.eval_on_selector("#panel-trip", "e => { e.scrollTop = 260; }")
+    before = page.evaluate("document.querySelector('#panel-trip').scrollTop")
+    n_before = page.locator(".stop[data-id]").count()
+    page.evaluate("window.__abtcp.sidebar.addStop(window.__abtcp.db.search('Alta', 3).find(s => window.__abtcp.db.isUsable(s)))")
+    page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length === {n_before + 1}", timeout=20000)
+    wait_legs(page)
+    after = page.evaluate("document.querySelector('#panel-trip').scrollTop")
+    assert abs(after - before) < 40, f"scroll jumped from {before} to {after}"
+    page.evaluate("window.__abtcp.sidebar.removeStop(window.__abtcp.store.trip.stops.at(-1).id)")
+    page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length === {n_before}", timeout=15000)
+    wait_legs(page)
+
+    # --- densify inserts extra sites within the detour budget and the charge cap
+    stops_before = page.evaluate("window.__abtcp.store.trip.stops.length")
+    low_before = page.evaluate("window.__abtcp.timeline.stops.filter(r => r.arrivalSoc < window.__abtcp.store.trip.settings.reserveSoc).length")
+    added = page.evaluate("window.__abtcp.planner.densify({ maxDetourKm: 60, maxAdds: 3 })")
+    assert added >= 1, "densify inserted nothing"
+    assert page.evaluate("window.__abtcp.store.trip.stops.length") == stops_before + added
+    wait_legs(page)
+    assert page.evaluate("window.__abtcp.timeline.stops.every(r => r.leg.status === 'ok')"), "all legs routed after densify"
+    cap = page.evaluate("window.__abtcp.store.trip.settings.maxChargeSoc")
+    assert page.evaluate(f"window.__abtcp.store.trip.stops.every(s => !s.charge || s.charge.targetSoc <= {cap})"), "a stop was pushed above the charge cap"
+    low_after = page.evaluate("window.__abtcp.timeline.stops.filter(r => r.arrivalSoc < window.__abtcp.store.trip.settings.reserveSoc).length")
+    assert low_after <= low_before, f"densify made reachability worse ({low_before} -> {low_after} legs below reserve)"
+    # a 0 km detour budget must insert nothing
+    assert page.evaluate("window.__abtcp.planner.densify({ maxDetourKm: 0, maxAdds: 2 })") == 0
+    for _ in range(added):
+        page.evaluate("window.__abtcp.sidebar.removeStop(window.__abtcp.store.trip.stops.at(-1).id)")
+    wait_legs(page)
+
     # --- day separators appear where the plan crosses midnight (30 h rest)
     seps = page.eval_on_selector_all(".day-sep span", "els => els.map(e => e.textContent)")
     assert len(seps) >= 1, "a Day divider after the 30 h rest"
