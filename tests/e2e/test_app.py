@@ -323,6 +323,68 @@ def test_plan_export_import(page, url, log):
     wait_legs(page)
     assert page.locator(".stop-icon .pass").count() == 0
 
+    # --- floating map actions: hover a planned stop, then remove it from there
+    n_before = page.locator(".stop[data-id]").count()
+    box = page.evaluate("(() => { const el = [...document.querySelectorAll('.leaflet-marker-pane .stop-icon')].find(e => e.querySelector('.n') && e.querySelector('.n').textContent === '1' && !e.className.includes('start')); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + 8 }; })()")
+    page.mouse.move(box["x"], box["y"])
+    page.wait_for_selector("#map-actions button[data-act='remove']", timeout=5000)
+    assert page.locator("#map-actions button[data-act='replace']").count() == 1
+    assert page.locator("#map-actions button[data-act='fill']").count() == 1
+    page.click("#map-actions button[data-act='remove']")
+    page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length === {n_before - 1}", timeout=20000)
+    wait_legs(page)
+    page.click("#btn-undo")  # restore it, so the rest of the flow keeps its plan
+    page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length === {n_before}", timeout=20000)
+    wait_legs(page)
+
+    # --- hovering a free charger offers Add
+    pt = page.evaluate("""() => { const a = window.__abtcp; const s = a.db.search('Alta', 3).find(x => a.db.isUsable(x) && x.country === 'Norway');
+      a.map.map.setView([s.lat, s.lng], 9, { animate: false });
+      const r = document.getElementById('map').getBoundingClientRect();
+      const p = a.map.map.latLngToContainerPoint([s.lat, s.lng]);
+      return { x: r.left + p.x, y: r.top + p.y, id: s.id }; }""")
+    page.mouse.move(pt["x"], pt["y"])
+    page.wait_for_selector("#map-actions button[data-act='add']", timeout=5000)
+    page.click("#map-actions button[data-act='add']")
+    page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length === {n_before + 1}", timeout=20000)
+    wait_legs(page)
+    page.evaluate("window.__abtcp.sidebar.removeStop(window.__abtcp.store.trip.stops.at(-1).id)")
+    page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length === {n_before}", timeout=15000)
+    wait_legs(page)
+
+    # --- hovering the route trace offers Fill this leg
+    page.click("#btn-fit")
+    page.wait_for_timeout(800)
+    # a point on the trace at least 4 km from any charger, so no dot's Add action takes precedence
+    mid = page.evaluate("""() => { const a = window.__abtcp; const t = a.store.trip;
+      const k = p => `${(+p.lat).toFixed(5)},${(+p.lng).toFixed(5)}`;
+      const leg = t.legs[`${k(t.start)}>${k(t.stops[0])}`];
+      if (!leg || leg.status !== 'ok') return null;
+      const r = document.getElementById('map').getBoundingClientRect();
+      const chunks = leg.route.chunks;
+      for (let n = 0; n < chunks.length; n++) {
+        const c = chunks[Math.floor(chunks.length / 2) + (n % 2 ? -1 : 1) * Math.ceil(n / 2)];
+        if (!c) continue;
+        const near = a.db.nearest(c[5], c[6], { n: 1, filter: s => a.db.isUsable(s) });
+        if (near.length && near[0].distM < 4000) continue;
+        const p = a.map.map.latLngToContainerPoint([c[5], c[6]]);
+        if (p.x < 30 || p.y < 30 || p.x > r.width - 30 || p.y > r.height - 30) continue;
+        return { x: r.left + p.x, y: r.top + p.y };
+      }
+      return null; }""")
+    assert mid, "no clear point found on the first leg"
+    page.mouse.move(mid["x"] + 60, mid["y"] + 60)
+    page.wait_for_timeout(350)
+    page.mouse.move(mid["x"], mid["y"])
+    page.wait_for_timeout(120)
+    page.mouse.move(mid["x"] + 1, mid["y"])
+    try:
+        page.wait_for_selector("#map-actions button[data-act='fill']", timeout=5000)
+    except Exception:
+        state = page.evaluate("(() => { const el = document.getElementById('map-actions'); return { hidden: el.hidden, kind: el.dataset.kind, html: el.innerHTML.slice(0, 90) }; })()")
+        raise AssertionError(f"leg hover did not offer Fill: {state}")
+    page.mouse.move(mid["x"], mid["y"] - 200)
+
     # --- hovering a suggestion highlights that charger on the map
     page.hover(".candidate[data-site]")
     page.wait_for_function("window.__abtcp.map.highlightCount() > 0", timeout=5000)
@@ -407,6 +469,15 @@ def test_plan_export_import(page, url, log):
       } } return bad; }""")
     assert overlaps == 0, f"{overlaps} overlapping itinerary blocks"
     assert page.evaluate("[...document.querySelectorAll('.itin-ev')].every(e => e.getBoundingClientRect().height >= 20)"), "unreadably small itinerary blocks"
+    assert page.locator("#itin-print").count() == 1, "print button"
+    page.evaluate("window.__printed = 0; window.__clicks = 0; window.print = () => { window.__printed++; }; document.getElementById('itin-print').addEventListener('click', () => { window.__clicks++; });")
+    page.click("#itin-print")
+    printed = page.evaluate("window.__printed")
+    assert printed == 1, f"print count: {printed}, click events: {page.evaluate('window.__clicks')}"
+    page.click("#itin-close")
+    page.wait_for_function("document.getElementById('itinerary').hidden === true", timeout=5000)
+    trip_menu(page, "btn-itinerary")
+    page.wait_for_selector(".itin-ev", timeout=5000)
     page.locator(".itin-ev").first.click()
     page.wait_for_function("document.getElementById('itinerary').hidden === true", timeout=5000)
     # renaming lives in the Trip menu now

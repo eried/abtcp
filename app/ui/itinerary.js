@@ -35,6 +35,17 @@ export function buildEvents(tl, trip) {
   return ev;
 }
 
+/** Text for the static toolbar / print header — the nodes themselves are never replaced. */
+export function itineraryHeader(tl, trip) {
+  const S = tl.summary;
+  const stats = `${S.uniqueCounted} sites · ${fmt.km(S.totalKm)} · ${fmt.h(S.totalTimeH)} · ${fmt.kwh(S.kwhBilled)}`;
+  return {
+    title: trip.meta.name,
+    summary: `${stats}${S.firstBreakIndex >= 0 ? ` · streak broken at #${S.firstBreakIndex + 1}` : ` · streak ${S.longestStreak} ✓`}`,
+    printHead: `${trip.meta.name} · ${stats} · departs ${fmt.time(tl.startTime)}`,
+  };
+}
+
 export function renderItinerary(el, tl, trip) {
   const events = buildEvents(tl, trip);
   if (!events.length) {

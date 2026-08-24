@@ -46,6 +46,92 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
 
   let filtered = false;
 
+  // ---- floating hover actions -------------------------------------------------------
+  const actionsEl = document.createElement('div');
+  actionsEl.id = 'map-actions';
+  actionsEl.className = 'map-actions';
+  actionsEl.hidden = true;
+  el.appendChild(actionsEl);
+  let hoverTimer = null;
+  let actionCtx = {};
+
+  function showActions(pt, items, ctx, kind) {
+    actionsEl.innerHTML = items.map(it => `<button data-act="${it.act}" title="${it.title || ''}">${it.label}</button>`).join('');
+    actionCtx = ctx || {};
+    actionsEl.dataset.kind = kind;
+    actionsEl.hidden = false;
+    const r = el.getBoundingClientRect();
+    const w = actionsEl.offsetWidth;
+    const h = actionsEl.offsetHeight;
+    actionsEl.style.left = `${Math.max(4, Math.min(r.width - w - 4, pt.x - w / 2))}px`;
+    actionsEl.style.top = `${Math.max(4, pt.y - h - 14)}px`;
+  }
+
+  function hideActions(delay = 260) {
+    clearTimeout(hoverTimer);
+    hoverTimer = setTimeout(() => { actionsEl.hidden = true; actionsEl.dataset.kind = ''; }, delay);
+  }
+
+  actionsEl.addEventListener('mouseenter', () => clearTimeout(hoverTimer));
+  actionsEl.addEventListener('mouseleave', () => hideActions(120));
+  actionsEl.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    e.stopPropagation();
+    actionsEl.hidden = true;
+    emit('mapAction', { act: b.dataset.act, ...actionCtx });
+  });
+
+  const hoverActions = (latlng, items, ctx, kind) => {
+    clearTimeout(hoverTimer);
+    showActions(map.latLngToContainerPoint(latlng), items, ctx, kind);
+  };
+
+  // Route traces are not interactive (they would swallow clicks meant for the dots), so leg
+  // hovering is done by measuring the pointer against a decimated projection of each leg.
+  let legPts = [];
+  let lastLegs = [];
+  function rebuildLegPts() {
+    legPts = [];
+    for (const leg of lastLegs) {
+      if (!leg.latlngs || leg.latlngs.length < 2) continue;
+      const step = Math.max(1, Math.floor(leg.latlngs.length / 160));
+      const pts = [];
+      for (let k = 0; k < leg.latlngs.length; k += step) {
+        const p = map.latLngToContainerPoint(leg.latlngs[k]);
+        pts.push([p.x, p.y]);
+      }
+      const last = map.latLngToContainerPoint(leg.latlngs[leg.latlngs.length - 1]);
+      pts.push([last.x, last.y]);
+      legPts.push({ index: leg.index, pts });
+    }
+  }
+  map.on('moveend zoomend', rebuildLegPts);
+
+  const distToSeg = (px, py, a, b) => {
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const len = dx * dx + dy * dy;
+    let t = len ? ((px - a[0]) * dx + (py - a[1]) * dy) / len : 0;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (a[0] + t * dx), py - (a[1] + t * dy));
+  };
+
+  map.on('mousemove', e => {
+    if (!legPts.length) return;
+    if (!actionsEl.hidden && actionsEl.dataset.kind !== 'leg') return; // a marker owns the bar
+    const p = e.containerPoint;
+    let best = null;
+    for (const L of legPts) {
+      for (let k = 1; k < L.pts.length; k++) {
+        const d = distToSeg(p.x, p.y, L.pts[k - 1], L.pts[k]);
+        if (d < 12 && (!best || d < best.d)) best = { d, index: L.index };
+      }
+    }
+    if (best) showActions({ x: p.x, y: p.y }, [{ act: 'fill', label: '⊕ Fill this leg', title: 'Insert more Superchargers into this leg (detour and charge limits apply)' }], { legIndex: best.index }, 'leg');
+    else if (actionsEl.dataset.kind === 'leg') hideActions(150);
+  });
+
   function setSites(sites, classify, popupFn) {
     popupHtml = popupFn || popupHtml;
     siteLayer.clearLayers();
@@ -57,6 +143,8 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
       m.setRadius(STYLE[cls].radius * radiusScale(map.getZoom()));
       m.bindPopup(() => popupHtml(s), { maxWidth: 300, autoPanPadding: [40, 40] });
       m.on('click', () => emit('siteClick', { site: s }));
+      m.on('mouseover', () => { if (!inTripIds.has(s.id)) hoverActions(m.getLatLng(), [{ act: 'add', label: '＋ Add stop', title: `Add ${s.name} as the next stop` }], { siteId: s.id }, 'site'); });
+      m.on('mouseout', () => { if (actionsEl.dataset.kind === 'site') hideActions(); });
       m.addTo(siteLayer);
       let pin = null;
       if (s.iconic) {
@@ -79,10 +167,12 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
 
   function setRoute(legs) {
     routeLayer.clearLayers();
+    lastLegs = legs.map((leg, i) => ({ ...leg, index: leg.index ?? i }));
     for (const leg of legs) {
       if (!leg.latlngs || leg.latlngs.length < 2) continue;
       L.polyline(leg.latlngs, { color: leg.color, weight: 4, opacity: 0.85, renderer, interactive: false }).addTo(routeLayer);
     }
+    rebuildLegPts();
   }
 
   const pct = x => Math.max(0, Math.min(100, x));
@@ -98,8 +188,12 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
     return L.divIcon({ className: `stop-icon ${cls}`, html: `<span class="n">${label}</span>${bar}${chip}`, iconSize: [38, 40], iconAnchor: [19 - fanPx, 14] });
   }
 
+  const inTripIds = new Set();
+
   function setStops({ start, stops, destination }) {
     stopLayer.clearLayers();
+    inTripIds.clear();
+    for (const s of stops) if (s.siteId != null) inTripIds.add(s.siteId);
     if (start) L.marker([start.lat, start.lng], { icon: stopIcon('start', 'S', start.batt, 0), zIndexOffset: 900 }).bindTooltip(start.name || 'Start').addTo(stopLayer);
     const keyOf = s => `${(+s.lat).toFixed(5)},${(+s.lng).toFixed(5)}`;
     const totals = new Map();
@@ -113,6 +207,12 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
       const pass = (totals.get(key) || 1) > 1 ? nth + 1 : 0;
       const m = L.marker([s.lat, s.lng], { icon: stopIcon(s.cls || '', String(i + 1), s.batt, fanPx, pass), zIndexOffset: 1000 + i }).bindTooltip(s.tooltip || s.name);
       m.on('click', () => emit('stopClick', { siteId: s.siteId ?? null, index: i }));
+      m.on('mouseover', () => hoverActions(m.getLatLng(), [
+        { act: 'fill', label: '⊕', title: 'Fill the leg before this stop with more Superchargers' },
+        { act: 'replace', label: '⇄', title: 'Replace this charger with another site' },
+        { act: 'remove', label: '✕', title: 'Remove this stop' },
+      ], { stopId: s.id, index: i, legIndex: i }, 'stop'));
+      m.on('mouseout', () => { if (actionsEl.dataset.kind === 'stop') hideActions(); });
       m.addTo(stopLayer);
     });
     if (destination) L.marker([destination.lat, destination.lng], { icon: stopIcon('dest', 'D', destination.batt, 0), zIndexOffset: 950 }).bindTooltip(destination.name || 'Destination').addTo(stopLayer);
@@ -220,5 +320,5 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
     return n;
   }
 
-  return { map, setTiles, setSites, restyle, setRoute, setStops, setCandidates, fitTo, openSite, panToShow, applyFilter, highlight, highlightCount, visibleCount, isVisible, pinsVisible, pinsTotal, on, closePopup: () => map.closePopup(), size: () => markers.size };
+  return { map, setTiles, setSites, restyle, setRoute, setStops, setCandidates, fitTo, openSite, panToShow, applyFilter, highlight, highlightCount, visibleCount, isVisible, pinsVisible, pinsTotal, hideActions, on, closePopup: () => map.closePopup(), size: () => markers.size };
 }

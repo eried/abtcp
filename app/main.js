@@ -12,7 +12,7 @@ import { geocode } from './services/geocode.js';
 import { createPlanner } from './planner.js';
 import { createMap } from './ui/map.js';
 import { createSidebar } from './ui/sidebar.js';
-import { renderItinerary } from './ui/itinerary.js';
+import { renderItinerary, itineraryHeader } from './ui/itinerary.js';
 import { renderSettings, bindSettings } from './ui/settings.js';
 import { createToast } from './ui/toast.js';
 import { fmt, esc, slug, socClass } from './ui/format.js';
@@ -123,6 +123,12 @@ async function main() {
   loadSites();
 
   map.on('stopClick', ({ siteId }) => { if (siteId != null) map.openSite(siteId); });
+  map.on('mapAction', ({ act, siteId, stopId, legIndex }) => {
+    if (act === 'add') { const site = db.byId(siteId); if (site) sidebar.addStop(site); }
+    else if (act === 'remove' && stopId) sidebar.removeStop(stopId);
+    else if (act === 'replace' && stopId) sidebar.startReplace(stopId);
+    else if (act === 'fill' && legIndex != null) sidebar.fillGap(legIndex);
+  });
   map.on('siteClick', ({ site }) => { if (sidebar.replacingId) sidebar.replaceWith(site); });
   map.on('siteAction', ({ act, siteId, stopId }) => {
     const site = db.byId(siteId);
@@ -201,17 +207,32 @@ async function main() {
 
   // ---------- itinerary ----------
   const itinEl = $('itinerary');
+  const itinContent = $('itin-content');
   let showItin = false;
+  function paintItinerary(tl, trip) {
+    const h = itineraryHeader(tl, trip);
+    $('itin-title').textContent = h.title;
+    $('itin-summary').textContent = h.summary;
+    $('itin-print-head').textContent = h.printHead;
+    renderItinerary(itinContent, tl, trip);
+  }
   function setItinerary(on) {
     showItin = on;
     itinEl.hidden = !on;
     $('map').style.display = on ? 'none' : '';
     $('btn-itinerary').textContent = on ? '🗺 Back to the map' : '🗓 Itinerary view';
-    if (on && lastTl) renderItinerary(itinEl, lastTl, store.trip);
+    if (on && lastTl) paintItinerary(lastTl, store.trip);
     if (!on) map.map.invalidateSize();
   }
   $('btn-itinerary').addEventListener('click', () => setItinerary(!showItin));
-  itinEl.addEventListener('click', e => {
+  $('itin-close').addEventListener('click', () => setItinerary(false));
+  let lastPrint = 0;
+  $('itin-print').addEventListener('click', () => {
+    if (Date.now() - lastPrint < 700) return; // never open two print dialogs from one intent
+    lastPrint = Date.now();
+    window.print();
+  });
+  itinContent.addEventListener('click', e => {
     const ev = e.target.closest('.itin-ev');
     if (!ev) return;
     const i = Number(ev.dataset.i);
@@ -255,7 +276,7 @@ async function main() {
       prev = r.stop;
       const latlngs = leg && leg.status === 'ok' ? routeLatLngs(leg.route) : null;
       const color = r.arrivalSoc >= trip.settings.reserveSoc + 15 ? '#16a34a' : r.arrivalSoc >= trip.settings.reserveSoc ? '#f59e0b' : '#dc2626';
-      return { latlngs, color };
+      return { latlngs, color, index: r.i };
     });
     if (trip.destination && tl.destination && tl.destination.leg.status === 'ok') {
       const lastStop = trip.stops.length ? trip.stops[trip.stops.length - 1] : trip.start;
@@ -263,18 +284,18 @@ async function main() {
       if (dleg && dleg.status === 'ok') {
         const soc = tl.destination.arrivalSoc;
         const color = soc >= trip.settings.reserveSoc + 15 ? '#16a34a' : soc >= trip.settings.reserveSoc ? '#f59e0b' : '#dc2626';
-        legs.push({ latlngs: routeLatLngs(dleg.route), color });
+        legs.push({ latlngs: routeLatLngs(dleg.route), color, index: trip.stops.length });
       }
     }
     map.setRoute(legs);
     map.setStops({
       start: { ...trip.start, batt: { arr: +trip.start.soc, dep: +trip.start.soc, cls: socClass(+trip.start.soc, trip.settings.reserveSoc) } },
-      stops: tl.stops.map(r => ({ lat: r.stop.lat, lng: r.stop.lng, siteId: r.stop.siteId ?? null, name: r.stop.name, cls: r.stop.kind === 'point' ? 'point' : (r.session && r.session.broken) ? 'broken' : '', batt: { arr: r.arrivalSoc, dep: r.departSoc, cls: socClass(r.arrivalSoc, trip.settings.reserveSoc) }, tooltip: `${r.i + 1}. ${r.stop.name} · arrive ${fmt.clock(r.arrival)} at ${fmt.pct(r.arrivalSoc)} → leave at ${fmt.pct(r.departSoc)}` })),
+      stops: tl.stops.map(r => ({ id: r.stop.id, lat: r.stop.lat, lng: r.stop.lng, siteId: r.stop.siteId ?? null, name: r.stop.name, cls: r.stop.kind === 'point' ? 'point' : (r.session && r.session.broken) ? 'broken' : '', batt: { arr: r.arrivalSoc, dep: r.departSoc, cls: socClass(r.arrivalSoc, trip.settings.reserveSoc) }, tooltip: `${r.i + 1}. ${r.stop.name} · arrive ${fmt.clock(r.arrival)} at ${fmt.pct(r.arrivalSoc)} → leave at ${fmt.pct(r.departSoc)}` })),
       destination: trip.destination
         ? { ...trip.destination, batt: tl.destination && tl.destination.leg.status === 'ok' ? { arr: tl.destination.arrivalSoc, dep: tl.destination.arrivalSoc, cls: socClass(tl.destination.arrivalSoc, trip.settings.reserveSoc) } : null }
         : null,
     });
-    if (showItin) renderItinerary(itinEl, tl, trip);
+    if (showItin) paintItinerary(tl, trip);
     const lastStop = trip.stops[trip.stops.length - 1];
     const sig = `${trip.stops.length}|${lastStop ? lastStop.id : ''}|${Math.round(tl.stops.length ? tl.stops[tl.stops.length - 1].departSoc : trip.start.soc)}`;
     if (sig !== filterSig) { filterSig = sig; applyMapFilters(); }

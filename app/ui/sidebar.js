@@ -14,6 +14,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
   let pickMode = null;
   let replaceId = null;
   let densifyKm = 25;
+  let lastSig = '';
   let pendingRender = false;
   let deferHooked = false;
   let chaining = false;
@@ -24,12 +25,21 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
   /** Fields whose value the user is actively editing must survive a re-render untouched. */
   const EDITING = new Set(['datetime-local', 'number', 'text', 'url', 'time', 'date']);
 
+  /** Identity of the plan's structure: changing it must repaint even while a field has focus. */
+  function structureSig(trip) {
+    return [trip.stops.map(s => s.id).join(','), trip.destination ? `${trip.destination.lat},${trip.destination.lng}` : '', `${trip.start.lat},${trip.start.lng}`].join('|');
+  }
+
   function render(timeline) {
     tl = timeline;
     const active = document.activeElement;
+    const sig = structureSig(store.trip);
+    const structural = sig !== lastSig;
+    lastSig = sig;
     // A live re-render would destroy the node being typed into (a datetime-local loses focus
-    // and the half-typed value). Defer instead, and repaint once the field is left.
-    if (active && el.contains(active) && active.tagName === 'INPUT' && EDITING.has(active.type)) {
+    // and the half-typed value). Defer instead — unless stops actually changed (undo/redo,
+    // auto-chain, fill gaps), where a stale panel would be worse.
+    if (!structural && active && el.contains(active) && active.tagName === 'INPUT' && EDITING.has(active.type)) {
       pendingRender = true;
       if (!deferHooked) {
         deferHooked = true;
@@ -350,6 +360,21 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     buildMissing().then(() => { planner.pruneLegs(); refreshCandidates(true); });
   }
 
+  function startReplace(id) {
+    const i = store.trip.stops.findIndex(s => s.id === id);
+    if (i < 0) return;
+    replaceId = id;
+    toast.show(`Pick a charger from the map or the list below to replace stop #${i + 1} (charge/rest settings are kept)`);
+    render(tl);
+    refreshCandidates(true);
+  }
+
+  function fillGap(index) {
+    const stop = store.trip.stops[index];
+    const label = stop ? stop.name : (store.trip.destination ? store.trip.destination.name : '');
+    runDensify(index, label);
+  }
+
   function removeStop(id) {
     if (replaceId === id) replaceId = null;
     store.update(t => { t.stops = t.stops.filter(s => s.id !== id); });
@@ -600,5 +625,5 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     toast.success(mode === 'start' ? 'Start set' : 'Destination set');
   });
 
-  return { render, refreshCandidates, addStop, addPoint, setStart, setDestination, removeStop, buildMissing, tripPoints, replaceWith, get replacingId() { return replaceId; }, get candidates() { return cands; } };
+  return { render, refreshCandidates, addStop, addPoint, setStart, setDestination, removeStop, startReplace, fillGap, buildMissing, tripPoints, replaceWith, get replacingId() { return replaceId; }, get candidates() { return cands; } };
 }

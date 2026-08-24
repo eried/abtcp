@@ -190,6 +190,7 @@ main { display: flex; flex: 1; min-height: 0; }
 
 /* Itinerary (calendar) view */
 #itinerary { flex: 1; min-width: 0; overflow: auto; background: var(--bg); padding: 10px 14px 20px; }
+#itinerary[hidden] .itin-bar { display: none; }
 #itinerary[hidden] { display: none; }
 .itin-empty { color: var(--muted); padding: 40px; text-align: center; }
 .itin-grid { display: flex; align-items: flex-start; }
@@ -254,4 +255,38 @@ main { display: flex; flex: 1; min-height: 0; }
 .dialog-body { overflow-y: auto; max-height: calc(86vh - 46px); }
 .dialog-body .panel { padding: 12px 16px 24px; overflow: visible; flex: none; min-height: 0; }
 .dialog-body .panel[hidden] { display: none; }
-#btn-settings, #btn-help { min-width: 34px; }
+#btn-settings, #btn-file { min-width: 36px; font-size: 15px; line-height: 1; }
+
+/* Floating map actions on hover */
+.map-actions { position: absolute; z-index: 700; display: flex; gap: 3px; padding: 3px; background: rgba(11,15,20,.95); border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 6px 20px rgba(0,0,0,.55); }
+.map-actions[hidden] { display: none; }
+.map-actions button { font-size: 12px; padding: 4px 9px; border-radius: 6px; background: var(--bg-3); border-color: transparent; white-space: nowrap; }
+.map-actions button:hover { background: var(--red); color: #fff; }
+
+/* Itinerary toolbar */
+.itin-bar { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 6; }
+.itin-bar b { font-size: 14px; }
+.itin-bar .muted { font-size: 12px; }
+.itin-bar .spacer { flex: 1; }
+.itin-print-head { display: none; }
+
+/* Printing: only the itinerary, on white */
+@media print {
+  @page { size: landscape; margin: 10mm; }
+  body { background: #fff; color: #000; }
+  .topbar, #sidebar, #map, #toast, .map-actions, .itin-bar, dialog { display: none !important; }
+  main { display: block; }
+  #itinerary { overflow: visible; padding: 0; background: #fff; }
+  .itin-print-head { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #000; }
+  .itin-dayhead { color: #000; background: #fff; border-bottom: 1px solid #999; }
+  .itin-gutter, .itin-hourlbl { color: #333; background: #fff; }
+  .itin-day { border-left: 1px solid #bbb; }
+  .itin-line { border-top: 1px dashed #ddd; }
+  .itin-ev { color: #000 !important; border: 1px solid #888; background: #fff !important; }
+  .itin-ev small { color: #333; }
+  .itin-ev.drive { border-left: 4px solid #1d4ed8; }
+  .itin-ev.charge { border-left: 4px solid #b91c1c; }
+  .itin-ev.rest { border-left: 4px solid #6d28d9; }
+  .itin-deadline { border-top: 2px solid #b91c1c; }
+  .itin-deadline span { background: #b91c1c; color: #fff; }
+}
