@@ -11,7 +11,7 @@ const STYLE = {
   open: { color: '#ffffff', fillColor: '#e82127', radius: 4.5, weight: 1.2, fillOpacity: 0.95 },
   closed: { color: '#ffffff', fillColor: '#9ca3af', radius: 4, weight: 1, fillOpacity: 0.9 },
   planned: { color: '#e82127', fillColor: '#ffffff', radius: 3.5, weight: 1, fillOpacity: 0.9 },
-  inTrip: { color: '#0f172a', fillColor: '#0f172a', radius: 5, weight: 1.5, fillOpacity: 1 },
+  inTrip: { color: '#ffffff', fillColor: '#16a34a', radius: 5.5, weight: 1.5, fillOpacity: 1 },
   visited: { color: '#ffffff', fillColor: '#f59e0b', radius: 4.5, weight: 1.2, fillOpacity: 0.95 },
 };
 
