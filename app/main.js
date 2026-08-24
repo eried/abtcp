@@ -15,7 +15,7 @@ import { createSidebar } from './ui/sidebar.js';
 import { renderItinerary } from './ui/itinerary.js';
 import { renderSettings, bindSettings } from './ui/settings.js';
 import { createToast } from './ui/toast.js';
-import { fmt, esc, slug } from './ui/format.js';
+import { fmt, esc, slug, socClass } from './ui/format.js';
 
 const $ = id => document.getElementById(id);
 
@@ -258,7 +258,7 @@ async function main() {
     map.setRoute(legs);
     map.setStops({
       start: trip.start,
-      stops: tl.stops.map(r => ({ lat: r.stop.lat, lng: r.stop.lng, siteId: r.stop.siteId ?? null, name: r.stop.name, cls: r.stop.kind === 'point' ? 'point' : (r.session && r.session.broken) ? 'broken' : '', tooltip: `${r.i + 1}. ${r.stop.name} · arrive ${fmt.clock(r.arrival)} at ${fmt.pct(r.arrivalSoc)}` })),
+      stops: tl.stops.map(r => ({ lat: r.stop.lat, lng: r.stop.lng, siteId: r.stop.siteId ?? null, name: r.stop.name, cls: r.stop.kind === 'point' ? 'point' : (r.session && r.session.broken) ? 'broken' : '', batt: { arr: r.arrivalSoc, dep: r.departSoc, cls: socClass(r.arrivalSoc, trip.settings.reserveSoc) }, tooltip: `${r.i + 1}. ${r.stop.name} · arrive ${fmt.clock(r.arrival)} at ${fmt.pct(r.arrivalSoc)} → leave at ${fmt.pct(r.departSoc)}` })),
       destination: trip.destination,
     });
     if (showItin) renderItinerary(itinEl, tl, trip);

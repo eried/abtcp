@@ -57,13 +57,14 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
       m.bindPopup(() => popupHtml(s), { maxWidth: 300, autoPanPadding: [40, 40] });
       m.on('click', () => emit('siteClick', { site: s }));
       m.addTo(siteLayer);
+      let pin = null;
       if (s.iconic) {
-        const pin = L.marker([s.lat, s.lng], { icon: L.divIcon({ className: 'iconic-pin', html: '🏅', iconSize: [22, 22], iconAnchor: [11, 24] }), zIndexOffset: 800 });
+        pin = L.marker([s.lat, s.lng], { icon: L.divIcon({ className: 'iconic-pin', html: '🏅', iconSize: [22, 22], iconAnchor: [11, 24] }), zIndexOffset: 800 });
         pin.bindTooltip(`🏅 ${s.iconic}`);
         pin.on('click', () => openSite(s.id));
         pin.addTo(siteLayer);
       }
-      markers.set(s.id, { marker: m, cls, site: s });
+      markers.set(s.id, { marker: m, pin, cls, site: s });
     }
   }
 
@@ -83,22 +84,43 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
     }
   }
 
-  const divIcon = (cls, label) => L.divIcon({ className: `stop-icon ${cls}`, html: `<span>${label}</span>`, iconSize: [24, 24], iconAnchor: [12, 12] });
+  const divIcon = (cls, label) => L.divIcon({ className: `stop-icon ${cls}`, html: `<span class="n">${label}</span>`, iconSize: [24, 24], iconAnchor: [12, 12] });
+
+  const pct = x => Math.max(0, Math.min(100, x));
+
+  function stopIcon(cls, label, batt, fanPx) {
+    let bar = '';
+    if (batt) {
+      const lo = pct(Math.min(batt.arr, batt.dep));
+      const w = pct(Math.abs(batt.dep - batt.arr));
+      bar = `<span class="mini-batt" title="arrive ${Math.round(batt.arr)} % → leave ${Math.round(batt.dep)} %"><i class="${batt.cls || ''}" style="width:${pct(batt.arr)}%"></i><b class="${batt.dep < batt.arr ? 'd' : ''}" style="left:${lo}%;width:${w}%"></b></span>`;
+    }
+    return L.divIcon({ className: `stop-icon ${cls}`, html: `<span class="n">${label}</span>${bar}`, iconSize: [30, 34], iconAnchor: [15 - fanPx, 17] });
+  }
 
   function setStops({ start, stops, destination }) {
     stopLayer.clearLayers();
     if (start) L.marker([start.lat, start.lng], { icon: divIcon('start', 'S'), zIndexOffset: 900 }).bindTooltip(start.name || 'Start').addTo(stopLayer);
+    const seen = new Map();
     stops.forEach((s, i) => {
-      const m = L.marker([s.lat, s.lng], { icon: divIcon(s.cls || '', String(i + 1)), zIndexOffset: 1000 + i }).bindTooltip(s.tooltip || s.name);
+      const key = `${(+s.lat).toFixed(5)},${(+s.lng).toFixed(5)}`;
+      const nth = seen.get(key) || 0;
+      seen.set(key, nth + 1);
+      const fanPx = [0, 1, -1, 2, -2][Math.min(nth, 4)] * 20; // repeat visits fan out sideways
+      const m = L.marker([s.lat, s.lng], { icon: stopIcon(s.cls || '', String(i + 1), s.batt, fanPx), zIndexOffset: 1000 + i }).bindTooltip(s.tooltip || s.name);
       m.on('click', () => emit('stopClick', { siteId: s.siteId ?? null, index: i }));
       m.addTo(stopLayer);
     });
     if (destination) L.marker([destination.lat, destination.lng], { icon: divIcon('dest', 'D'), zIndexOffset: 950 }).bindTooltip(destination.name || 'Destination').addTo(stopLayer);
   }
 
+  let lastCands = [];
+
   function setCandidates(cands) {
+    lastCands = cands || [];
     candLayer.clearLayers();
-    for (const c of cands) {
+    for (const c of lastCands) {
+      if (currentFilter && !currentFilter(c.site)) continue; // no rings around filtered-out sites
       L.circleMarker([c.site.lat, c.site.lng], { renderer, radius: 10, color: '#2563eb', weight: 2, fill: false, opacity: 0.9, interactive: false }).addTo(candLayer);
     }
   }
@@ -130,12 +152,19 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
     map.setView([lat, lng], Math.max(map.getZoom(), 9));
   }
 
-  /** Show only sites where fn(site) is true; null restores everything. */
+  /** Show only sites where fn(site) is true; null restores everything. Pins and candidate rings follow. */
+  let currentFilter = null;
   function applyFilter(fn) {
+    currentFilter = fn || null;
     if (!fn) {
-      if (!filtered) return;
-      for (const e of markers.values()) if (!e.marker._map) e.marker.addTo(siteLayer);
-      filtered = false;
+      if (filtered) {
+        for (const e of markers.values()) {
+          if (!e.marker._map) e.marker.addTo(siteLayer);
+          if (e.pin && !e.pin._map) e.pin.addTo(siteLayer);
+        }
+        filtered = false;
+      }
+      setCandidates(lastCands);
       return;
     }
     filtered = true;
@@ -143,7 +172,24 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
       const show = fn(e.site);
       if (show && !e.marker._map) e.marker.addTo(siteLayer);
       else if (!show && e.marker._map) siteLayer.removeLayer(e.marker);
+      if (e.pin) {
+        if (show && !e.pin._map) e.pin.addTo(siteLayer);
+        else if (!show && e.pin._map) siteLayer.removeLayer(e.pin);
+      }
     }
+    setCandidates(lastCands);
+  }
+
+  function pinsVisible() {
+    let n = 0;
+    for (const e of markers.values()) if (e.pin && e.pin._map) n++;
+    return n;
+  }
+
+  function pinsTotal() {
+    let n = 0;
+    for (const e of markers.values()) if (e.pin) n++;
+    return n;
   }
 
   function isVisible(id) {
@@ -157,5 +203,5 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
     return n;
   }
 
-  return { map, setTiles, setSites, restyle, setRoute, setStops, setCandidates, fitTo, openSite, panToShow, applyFilter, visibleCount, isVisible, on, closePopup: () => map.closePopup(), size: () => markers.size };
+  return { map, setTiles, setSites, restyle, setRoute, setStops, setCandidates, fitTo, openSite, panToShow, applyFilter, visibleCount, isVisible, pinsVisible, pinsTotal, on, closePopup: () => map.closePopup(), size: () => markers.size };
 }

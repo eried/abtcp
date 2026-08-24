@@ -304,9 +304,10 @@ def test_plan_export_import(page, url, log):
     page.wait_for_function("document.querySelectorAll(\'.stop[data-id]\').length === 2", timeout=15000)
     wait_legs(page)
 
-    # --- battery bars on every card (incl. destination)
+    # --- battery bars on every card (incl. destination) and under the map badges
     assert page.locator(".stop[data-id] .batt").count() == 2
     assert page.locator("#dest-card .batt").count() == 1
+    assert page.locator(".stop-icon .mini-batt").count() >= 2, "mini battery under stop numbers" 
 
     # --- map filter: All | Reachable | Iconic (trip sites always visible)
     trip_visible = "window.__abtcp.store.trip.stops.filter(s => s.siteId != null).every(s => window.__abtcp.map.isVisible(s.siteId))"
@@ -319,6 +320,7 @@ def test_plan_export_import(page, url, log):
     page.wait_for_timeout(400)
     assert page.evaluate(trip_visible), "trip sites stay visible in Reachable mode"
     assert page.evaluate("window.__abtcp.map.visibleCount()") < total_visible
+    assert page.evaluate("window.__abtcp.map.pinsVisible() < window.__abtcp.map.pinsTotal()"), "far iconic pins hidden in Reachable mode" 
     page.click("#chip-all")
     page.wait_for_function(f"window.__abtcp.map.visibleCount() === {total_visible}", timeout=5000)
 
