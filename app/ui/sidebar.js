@@ -14,6 +14,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
   let pickMode = null;
   let replaceId = null;
   let lastSig = '';
+  let stopReason = '';
   let pendingRender = false;
   let deferHooked = false;
   let chaining = false;
@@ -345,6 +346,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
 
   async function addStop(site, { targetSoc = null } = {}) {
     if (!site) return;
+    noteUserEdit('you added a stop');
     if (replaceId) { performReplace(site); return; }
     await store.batch(async () => {
       const stop = newStop({ site, targetSoc: targetSoc ?? store.trip.settings.defaultTargetSoc });
@@ -360,6 +362,13 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     const stop = newStop({ lat, lng, name: name || `Waypoint ${(+lat).toFixed(3)}, ${(+lng).toFixed(3)}` });
     store.update(t => { t.stops.push(stop); });
     buildMissing().then(() => { planner.pruneLegs(); refreshCandidates(true); });
+  }
+
+  /** The plan stays editable while a fill runs; touching it stops the fill at the next step. */
+  function noteUserEdit(what = 'you changed the plan') {
+    if (!chaining || stopChain) return;
+    stopChain = true;
+    stopReason = what; // the closing toast explains it, so messages do not fight each other
   }
 
   function cancelReplace() {
@@ -383,6 +392,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
   }
 
   function removeStop(id) {
+    noteUserEdit('you removed a stop');
     if (replaceId === id) replaceId = null;
     store.update(t => { t.stops = t.stops.filter(s => s.id !== id); });
     planner.pruneLegs();
@@ -390,6 +400,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
   }
 
   function moveStop(id, dir) {
+    noteUserEdit('you reordered the stops');
     store.update(t => {
       const i = t.stops.findIndex(s => s.id === id);
       const j = i + dir;
@@ -400,6 +411,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
   }
 
   function setStart({ lat, lng, name }) {
+    noteUserEdit('you moved the start');
     store.update(t => { t.start = { ...t.start, lat, lng, name: name || `${lat.toFixed(4)}, ${lng.toFixed(4)}` }; });
     search.start = { q: '', results: [], busy: false };
     map.closePopup();
@@ -408,6 +420,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
   }
 
   function setDestination(dest) {
+    noteUserEdit('you changed the destination');
     store.update(t => { t.destination = dest; });
     search.dest = { q: '', results: [], busy: false };
     map.closePopup();
@@ -431,7 +444,8 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     stopChain = false;
     const S = store.trip.settings;
     const per = (S.fill && S.fill.perRun) || 3;
-    if (busy) busy.start({ title: 'Filling this leg with more Superchargers', total: per, onCancel: () => { stopChain = true; } });
+    stopReason = '';
+    if (busy) busy.start({ title: 'Filling this leg with more Superchargers', total: per, onCancel: () => { stopChain = true; stopReason = 'you pressed Stop'; } });
     let added = 0;
     try {
       added = await store.batch(() => planner.fillLeg({
@@ -442,7 +456,8 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
           if (busy) busy.update({ done: a, text: `${stop.name} (+${Math.round(best.detourKm)} km detour)`, log: `+ ${stop.name} · detour ${Math.round(best.detourKm)} km` });
         },
       }));
-      if (added) toast.success(`Added ${added} site${added === 1 ? '' : 's'} to this leg — click again to fit more between them`);
+      if (stopChain) toast.show(`Fill stopped — ${stopReason || 'cancelled'}${added ? ` · kept ${added} site${added === 1 ? '' : 's'}` : ''}`);
+      else if (added) toast.success(`Added ${added} site${added === 1 ? '' : 's'} to this leg — click again to fit more between them`);
       else toast.error(`Nothing fits in this leg within ${(S.fill && S.fill.maxDetourKm) || 60} km detour and a ${S.maxChargeSoc ?? 90} % charge cap`);
     } catch (e) {
       toast.error(`Fill failed: ${(e && e.message) || e}`);
@@ -506,6 +521,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     if (t.id === 'cand-toward') { store.update(tr => { tr.settings.candidates.toward = t.checked; }); refreshCandidates(true); return; }
     if (!card) return;
     const id = card.dataset.id;
+    noteUserEdit('you edited a stop');
     if (t.classList.contains('charge-target')) {
       store.update(tr => { const s = tr.stops.find(x => x.id === id); if (s) s.charge = { ...(s.charge || {}), targetSoc: Number(t.value) }; });
       if (Number(card.dataset.index) === store.trip.stops.length - 1) refreshCandidates();

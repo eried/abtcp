@@ -55,7 +55,7 @@ export function createBusy(el) {
         const li = document.createElement('li');
         li.textContent = log;
         logEl.prepend(li);
-        while (logEl.children.length > 6) logEl.lastElementChild.remove();
+        while (logEl.children.length > 3) logEl.lastElementChild.remove();
       }
     },
     stop(summary = null) {

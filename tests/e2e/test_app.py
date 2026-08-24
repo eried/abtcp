@@ -454,7 +454,11 @@ def test_plan_export_import(page, url, log):
     page.click('.gap-row[data-gap="1"] [data-act="fill-gap"]')
     page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length > {n0} || document.querySelector('#toast').textContent.includes('Nothing fits')", timeout=60000)
     page.wait_for_function("document.getElementById('busy').hidden === true", timeout=60000)
-    assert page.evaluate("window.__busySeen") is True, "the progress overlay should show while filling"
+    assert page.evaluate("window.__busySeen") is True, "the progress panel should show while filling"
+    # the panel must not block the app: its container ignores pointer events, only the box takes them
+    assert page.evaluate("getComputedStyle(document.getElementById('busy')).pointerEvents") == "none"
+    assert page.evaluate("getComputedStyle(document.querySelector('.busy-box')).pointerEvents") == "auto"
+    assert page.evaluate("getComputedStyle(document.getElementById('busy')).backdropFilter") in ("none", "")
     wait_legs(page)
     n1 = page.locator(".stop[data-id]").count()
     assert n1 > n0, "the gap row added at least one site"
