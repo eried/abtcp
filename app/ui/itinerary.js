@@ -50,22 +50,32 @@ export function renderItinerary(el, tl, trip) {
   for (let d = 0; d < days; d++) {
     const ds = t0 + d * DAY;
     const de = ds + DAY;
-    html += `<div class="itin-day"><div class="itin-dayhead">${fmt.day(ds)}</div><div class="itin-col" style="height:${colH}px">`;
-    for (let h = 2; h < 24; h += 2) html += `<div class="itin-line" style="top:${h * HOUR_PX}px"></div>`;
+    // Calendar-elastic layout: blocks keep their time position when possible, but every block
+    // gets a readable minimum height and is pushed down (growing the day) instead of overlapping.
+    const laneBottom = { left: -1e9, right: -1e9 };
+    let colBottom = colH;
+    let evHtml = '';
     for (const e of events) {
       const from = Math.max(e.from, ds);
       const to = Math.min(e.to, de);
       if (to <= from) continue;
-      const top = (from - ds) / 36e5 * HOUR_PX;
-      const height = Math.max(11, (to - from) / 36e5 * HOUR_PX - 1);
+      const lane = e.kind === 'charge' ? 'right' : 'left';
+      const minH = e.kind === 'charge' ? 24 : 26;
+      let top = (from - ds) / 36e5 * HOUR_PX;
+      if (top < laneBottom[lane] + 2) top = laneBottom[lane] + 2;
+      const height = Math.max(minH, (to - from) / 36e5 * HOUR_PX - 1);
+      laneBottom[lane] = top + height;
+      if (top + height > colBottom) colBottom = top + height;
       const cont = `${e.from < ds ? '… ' : ''}${e.to > de ? '(continues) ' : ''}`;
-      html += `<div class="itin-ev ${e.kind}${e.broken ? ' broken' : ''}" data-i="${e.i}" style="top:${top}px;height:${height}px" title="${esc(e.label)} · ${fmt.clock(e.from)}–${fmt.clock(e.to)} · ${esc(e.sub)}"><b>${esc(cont)}${esc(e.label)}</b>${height > 24 ? `<small>${fmt.clock(e.from)}–${fmt.clock(e.to)} · ${esc(e.sub)}</small>` : ''}</div>`;
+      evHtml += `<div class="itin-ev ${e.kind}${e.broken ? ' broken' : ''}" data-i="${e.i}" style="top:${top}px;height:${height}px" title="${esc(e.label)} · ${fmt.clock(e.from)}–${fmt.clock(e.to)} · ${esc(e.sub)}"><b>${esc(cont)}${esc(e.label)}</b>${height >= 22 ? `<small>${fmt.clock(e.from)}–${fmt.clock(e.to)} · ${esc(e.sub)}</small>` : ''}</div>`;
     }
     const dl = tl.summary.nextDeadline;
     if (dl != null && dl >= ds && dl < de) {
-      html += `<div class="itin-deadline" style="top:${(dl - ds) / 36e5 * HOUR_PX}px" title="The next new site's charging session must start before ${fmt.time(dl)}"><span>⏱ next site by ${fmt.clock(dl)}</span></div>`;
+      evHtml += `<div class="itin-deadline" style="top:${(dl - ds) / 36e5 * HOUR_PX}px" title="The next new site's charging session must start before ${fmt.time(dl)}"><span>⏱ next site by ${fmt.clock(dl)}</span></div>`;
     }
-    html += '</div></div>';
+    html += `<div class="itin-day"><div class="itin-dayhead">${fmt.day(ds)}</div><div class="itin-col" style="height:${Math.ceil(colBottom) + 10}px">`;
+    for (let h = 2; h < 24; h += 2) html += `<div class="itin-line" style="top:${h * HOUR_PX}px"></div>`;
+    html += evHtml + '</div></div>';
   }
   html += '</div>';
   el.innerHTML = html;

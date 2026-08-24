@@ -193,9 +193,9 @@ main { display: flex; flex: 1; min-height: 0; }
 .itin-ev b { display: block; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .itin-ev small { display: block; color: rgba(255,255,255,.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .itin-ev.drive { background: #1d4ed8cc; }
-.itin-ev.drive { left: 3px; right: 34%; }
-.itin-ev.rest { left: 3px; right: 34%; }
-.itin-ev.charge { background: #b91c1cd9; left: 68%; right: 3px; z-index: 2; padding: 1px 4px; }
+.itin-ev.drive { left: 3px; right: 38%; }
+.itin-ev.rest { left: 3px; right: 38%; }
+.itin-ev.charge { background: #b91c1cd9; left: 63%; right: 3px; z-index: 2; padding: 1px 4px; }
 .itin-ev.rest { background: #6d28d9b3; }
 .itin-ev.broken { outline: 2px solid var(--red); }
 .itin-deadline { position: absolute; left: 0; right: 0; border-top: 2px solid var(--red); z-index: 3; pointer-events: none; }

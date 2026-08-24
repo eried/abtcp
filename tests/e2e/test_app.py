@@ -306,6 +306,14 @@ def test_plan_export_import(page, url, log):
     assert page.locator(".itin-ev.charge").count() >= 2, "charge blocks"
     assert page.locator(".itin-day").count() >= 2, "day columns (30 h rest spans days)"
     assert page.locator(".itin-ev.rest").count() >= 1, "rest block"
+    overlaps = page.evaluate("""() => { let bad = 0; for (const day of document.querySelectorAll('.itin-day')) {
+      for (const lane of [['drive', 'rest'], ['charge']]) {
+        const rs = [...day.querySelectorAll('.itin-ev')].filter(e => lane.some(k => e.classList.contains(k)))
+          .map(e => e.getBoundingClientRect()).sort((a, b) => a.top - b.top);
+        for (let i = 1; i < rs.length; i++) if (rs[i].top < rs[i - 1].bottom - 1) bad++;
+      } } return bad; }""")
+    assert overlaps == 0, f"{overlaps} overlapping itinerary blocks"
+    assert page.evaluate("[...document.querySelectorAll('.itin-ev')].every(e => e.getBoundingClientRect().height >= 20)"), "unreadably small itinerary blocks"
     page.locator(".itin-ev").first.click()
     page.wait_for_function("document.getElementById('itinerary').hidden === true", timeout=5000)
 
