@@ -28,7 +28,7 @@
       <span id="status" class="status" aria-live="polite"></span>
       <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>↶</button>
       <button id="btn-redo" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
-      <button id="btn-fit" title="Zoom the map to the trip">Fit</button>
+      <button id="btn-fit" title="Zoom the map to the trip">⛶ Fit</button>
       <div class="menu">
         <button id="btn-trip" aria-haspopup="true" aria-expanded="false" title="Rename, itinerary view, recompute">Trip ▾</button>
         <div id="trip-menu" class="menu-list" role="menu" hidden>
@@ -90,7 +90,9 @@
           <li><b>⊕</b> on a stop card (or the destination card) fills just that leg; the <b>⊕ Fill gaps with more sites</b> button does the whole trip. Everything is undoable with the <b>↶ ↷</b> buttons or Ctrl+Z / Ctrl+Shift+Z. Fill gaps goes the other way from Auto-chain: it inserts every extra Supercharger that fits between the stops you already have (and before the destination) without adding more than the detour you set, and without ever forcing a charge above the maximum in Settings (90 % by default — above that the charging curve crawls); a site that would need more is skipped for the next one. It is the fastest way to maximise unique sites, e.g. on the way back. <b>Auto-chain</b> repeatedly adds the nearest new site that makes road-distance progress toward the destination, charging just enough at each stop (it raises the previous charge target only when the next hop needs more). If a stop you added is too far (arrives below reserve), its card shows <b>⛽ Insert stops before</b> — the planner fills that gap the same way, preferring sites you have not visited this year.</li>
           <li>The <b>destination</b> is routed and timed as the final leg (the "D" card at the end); <b>↩ roundtrip</b> sets it back to your start so the return is part of the plan — and because suggestions prefer unvisited sites, the way back uses different chargers.</li>
           <li>The <b>toward destination</b> tick above the suggestions filters them to sites that actually bring you closer to your destination <em>by road</em> — it hides backtracking and dead ends (a charger across a fjord can look near in a straight line but be 400 km by road). Untick it to see every nearby site, e.g. when you deliberately want a detour; with no destination set it does nothing and is greyed out.</li>
-          <li><b>On the map, hover for actions:</b> a free charger offers <b>＋ Add stop</b>, a planned stop offers <b>⊕</b> (fill the leg before it), <b>⇄</b> (replace) and <b>✕</b> (remove), and hovering the route trace between two stops offers <b>⊕ Fill this leg</b>. Clicking still opens the full popup.</li>
+          <li><b>On the map, hover for actions:</b> a free charger offers <b>＋</b> (add as next stop), a planned stop offers <b>⊕</b> (fill the leg before it), <b>⇄</b> (replace) and <b>✕</b> (remove), and hovering the route trace between two stops offers <b>⊕ Fill this leg</b>. Clicking a charger still opens the full popup.</li>
+          <li>While <b>replacing</b> a stop, the panel header says which stop is being replaced, hovered chargers show <b>⇄</b> with an animated line from the old site, and Esc, the ✕ cancel button or a click on empty map leaves replace mode.</li>
+          <li>If a leg cannot be driven, that stop and <b>every stop after it</b> are marked unreachable — the planner will not invent a charging session for a car that never arrived. Fix the gap (⊕ on the card, or a higher charge target earlier) and the rest recomputes.</li>
           <li>Hovering a suggestion or a stop card rings that charger on the map. “<b>+NN km toward</b>” on a suggestion is the road-distance progress toward the destination that the hop gains (“(line)” = straight-line estimate when the routing table was unavailable). 📍 pans the map to that charger; the popup of a planned charger also offers <b>Remove stop #N</b>. The <b>Itinerary</b> button (top bar) lays the whole plan out as a calendar — one column per day, driving / charging / rests on an hour grid, with the red ⏱ streak-deadline line.</li>
           <li>Every stop card has a <b>battery bar</b> — solid = the level you arrive with, <b>blue</b> = what you charge there (amber = what you lose while resting), the white tick = your reserve. The start (S), destination (D) and numbered badges on the map carry the same bar, and repeat visits to one site fan out side by side with an amber pass number. The map filter (<b>All / ⚡ Reachable / 🏅 Iconic</b>) limits the dots to what the car can reach right now from the end of the plan, or to badge sites — your own stops, start, destination and route always stay visible. <b>⇄</b> on a card starts a replace: pick another charger from the map or the list and it swaps in, keeping the charge level and rest.</li>
           <li><b>Export</b> the plan as JSON (everything included: settings, car, stops, cached routes) and <b>Import</b> it later; the browser also autosaves.</li>
@@ -115,6 +117,15 @@
       </section>
     </div>
   </dialog>
+  <div id="busy" class="busy" hidden aria-live="polite">
+    <div class="busy-box">
+      <div class="busy-title">Working…</div>
+      <div class="busy-bar"><i></i></div>
+      <div class="busy-line"></div>
+      <ul class="busy-log"></ul>
+      <div class="busy-foot"><span class="busy-elapsed">0s</span><button id="busy-stop" class="danger">Stop</button></div>
+    </div>
+  </div>
   <div id="toast" class="toast" role="status"></div>
 </div>
 <script src="vendor/leaflet/leaflet.js"></script>

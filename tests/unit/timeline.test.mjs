@@ -129,7 +129,36 @@ test('reserve and unreachable warnings', () => {
   const r2 = compute(t2);
   assert.ok(r2.stops[0].arrivalSoc < 0);
   assert.ok(r2.stops[0].warnings.some(w => w.level === 'error' && /Unreachable/.test(w.msg)));
-  assert.equal(r2.stops[0].session.targetSoc, 80);
+  assert.equal(r2.stops[0].session, null, 'a car that never arrived cannot charge');
+  assert.equal(r2.stops[0].stranded, true);
+  assert.equal(r2.summary.strandedIndex, 0);
+});
+
+test('an unreachable leg strands every stop after it', () => {
+  const far = newStop({ site: A, targetSoc: 80 });
+  const later = newStop({ site: B, targetSoc: 80 });
+  later.rest = { hours: 8, sentry: true };
+  const last = newStop({ site: C, targetSoc: 80 });
+  const t = trip({ stops: [far, later, last], legs: [{ km: 600 }, { km: 60 }, { km: 60 }] });
+  const { stops, summary } = compute(t);
+  assert.equal(summary.strandedIndex, 0);
+  stops.forEach((r, i) => {
+    assert.equal(r.stranded, true, `stop ${i} stranded`);
+    assert.equal(r.session, null, `stop ${i} has no session`);
+    assert.ok(r.arrivalSoc < 0, `stop ${i} arrives negative (${r.arrivalSoc})`);
+    assert.ok(r.warnings.some(w => w.level === 'error'));
+  });
+  assert.ok(/already ran out at stop #1/.test(stops[1].warnings.map(w => w.msg).join(' ')));
+  assert.equal(stops[1].rest.drainPct, 0, 'no phantom drain while stranded');
+  assert.equal(summary.uniqueCounted, 0, 'nothing counts after the car runs out');
+  assert.equal(summary.kwhBilled, 0);
+  assert.equal(summary.longestStreak, 0);
+  // fixing the first leg revives the rest of the plan
+  t.legs[legKey(t.start, far)] = mkLeg(t.start, far, 100);
+  const fixed = compute(t);
+  assert.equal(fixed.summary.strandedIndex, -1);
+  assert.equal(fixed.summary.uniqueCounted, 3);
+  fixed.stops.forEach(r => assert.ok(r.arrivalSoc > 0));
 });
 
 test('point stop with AC charge during a rest adds energy, no session counted, no extra time', () => {

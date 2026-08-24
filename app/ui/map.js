@@ -31,6 +31,9 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
   const candLayer = L.layerGroup().addTo(map);
   const stopLayer = L.layerGroup().addTo(map);
   const hlLayer = L.layerGroup().addTo(map);
+  const hintLayer = L.layerGroup().addTo(map);
+  const leaderLayer = L.layerGroup().addTo(map);
+  let replaceAnchor = null;
   const handlers = {};
   const on = (ev, fn) => { (handlers[ev] ||= []).push(fn); };
   const emit = (ev, data) => (handlers[ev] || []).forEach(fn => fn(data));
@@ -106,7 +109,7 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
       legPts.push({ index: leg.index, pts });
     }
   }
-  map.on('moveend zoomend', rebuildLegPts);
+  map.on('moveend zoomend', () => { rebuildLegPts(); declutterStops(); });
 
   const distToSeg = (px, py, a, b) => {
     const dx = b[0] - a[0];
@@ -151,9 +154,16 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
       const m = L.circleMarker([s.lat, s.lng], { renderer, ...STYLE[cls] });
       m.setRadius(STYLE[cls].radius * radiusScale(map.getZoom()));
       m.bindPopup(() => popupHtml(s), { maxWidth: 300, autoPanPadding: [40, 40] });
-      m.on('click', () => emit('siteClick', { site: s }));
-      m.on('mouseover', () => { if (!inTripIds.has(s.id)) hoverActions(m.getLatLng(), [{ act: 'add', label: '＋ Add stop', title: `Add ${s.name} as the next stop` }], { siteId: s.id }, 'site'); });
-      m.on('mouseout', () => { if (actionsEl.dataset.kind === 'site') hideActions(); });
+      m.on('click', () => { hideActions(0); emit('siteClick', { site: s }); });
+      m.on('mouseover', () => {
+        if (replaceAnchor) {
+          replaceHint(m.getLatLng());
+          hoverActions(m.getLatLng(), [{ act: 'replace-with', label: '⇄', title: `Replace the selected stop with ${s.name}` }], { siteId: s.id }, 'site');
+          return;
+        }
+        if (!inTripIds.has(s.id)) hoverActions(m.getLatLng(), [{ act: 'add', label: '＋', title: `Add ${s.name} as the next stop` }], { siteId: s.id }, 'site');
+      });
+      m.on('mouseout', () => { if (replaceAnchor) hintLayer.clearLayers(); if (actionsEl.dataset.kind === 'site') hideActions(); });
       m.addTo(siteLayer);
       let pin = null;
       if (s.iconic) {
@@ -186,7 +196,8 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
 
   const pct = x => Math.max(0, Math.min(100, x));
 
-  function stopIcon(cls, label, batt, fanPx, pass = 0) {
+  function stopIcon(cls, label, batt, offset = [0, 0], pass = 0) {
+    const [dx, dy] = Array.isArray(offset) ? offset : [offset, 0];
     let bar = '';
     if (batt) {
       const lo = pct(Math.min(batt.arr, batt.dep));
@@ -194,16 +205,43 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
       bar = `<span class="mini-batt" title="arrive ${Math.round(batt.arr)} % → leave ${Math.round(batt.dep)} %"><i class="${batt.cls || ''}" style="width:${pct(batt.arr)}%"></i><b class="${batt.dep < batt.arr ? 'd' : ''}" style="left:${lo}%;width:${w}%"></b></span>`;
     }
     const chip = pass > 0 ? `<span class="pass" title="pass ${pass} at this site">${pass}</span>` : '';
-    return L.divIcon({ className: `stop-icon ${cls}`, html: `<span class="n">${label}</span>${bar}${chip}`, iconSize: [38, 40], iconAnchor: [19 - fanPx, 14] });
+    return L.divIcon({ className: `stop-icon ${cls}`, html: `<span class="n">${label}</span>${bar}${chip}`, iconSize: [38, 40], iconAnchor: [19 - dx, 14 - dy] });
   }
 
   const inTripIds = new Set();
 
+  let stopMarkers = [];
+
+  const OFFSETS = [[0, 0], [30, -4], [-30, -4], [0, -34], [30, 26], [-30, 26], [0, 38], [52, 10], [-52, 10], [52, -26], [-52, -26]];
+
+  /** Keep badges legible when stops (or nearby chargers) crowd the same pixels. */
+  function declutterStops() {
+    if (!stopMarkers.length) return;
+    leaderLayer.clearLayers();
+    const used = [];
+    for (const sm of stopMarkers) {
+      const p = map.latLngToContainerPoint(sm.latlng);
+      let chosen = OFFSETS[0];
+      for (const off of OFFSETS) {
+        const c = { x: p.x + off[0], y: p.y + off[1] };
+        if (used.every(u => Math.hypot(u.x - c.x, u.y - c.y) > 36)) { chosen = off; break; }
+      }
+      used.push({ x: p.x + chosen[0], y: p.y + chosen[1] });
+      sm.marker.setIcon(stopIcon(sm.cls, sm.label, sm.batt, chosen, sm.pass));
+      if (chosen[0] || chosen[1]) { // leader line so an offset badge still points at its site
+        const to = map.containerPointToLatLng([p.x + chosen[0], p.y + chosen[1] + 10]);
+        L.polyline([sm.latlng, to], { color: '#94a3b8', weight: 1, opacity: 0.8, interactive: false, renderer }).addTo(leaderLayer);
+      }
+    }
+  }
+
   function setStops({ start, stops, destination }) {
     stopLayer.clearLayers();
+    leaderLayer.clearLayers();
+    stopMarkers = [];
     inTripIds.clear();
     for (const s of stops) if (s.siteId != null) inTripIds.add(s.siteId);
-    if (start) L.marker([start.lat, start.lng], { icon: stopIcon('start', 'S', start.batt, 0), zIndexOffset: 900 }).bindTooltip(start.name || 'Start').addTo(stopLayer);
+    if (start) L.marker([start.lat, start.lng], { icon: stopIcon('start', 'S', start.batt, [0, 0]), zIndexOffset: 900 }).bindTooltip(start.name || 'Start').addTo(stopLayer);
     const keyOf = s => `${(+s.lat).toFixed(5)},${(+s.lng).toFixed(5)}`;
     const totals = new Map();
     for (const s of stops) totals.set(keyOf(s), (totals.get(keyOf(s)) || 0) + 1);
@@ -212,9 +250,9 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
       const key = keyOf(s);
       const nth = seen.get(key) || 0;
       seen.set(key, nth + 1);
-      const fanPx = [0, 1, -1, 2, -2][Math.min(nth, 4)] * 22; // repeat visits fan out sideways
       const pass = (totals.get(key) || 1) > 1 ? nth + 1 : 0;
-      const m = L.marker([s.lat, s.lng], { icon: stopIcon(s.cls || '', String(i + 1), s.batt, fanPx, pass), zIndexOffset: 1000 + i }).bindTooltip(s.tooltip || s.name);
+      const m = L.marker([s.lat, s.lng], { icon: stopIcon(s.cls || '', String(i + 1), s.batt, [0, 0], pass), zIndexOffset: 1000 + i }).bindTooltip(s.tooltip || s.name);
+      stopMarkers.push({ marker: m, latlng: L.latLng(s.lat, s.lng), cls: s.cls || '', label: String(i + 1), batt: s.batt, pass });
       m.on('click', () => emit('stopClick', { siteId: s.siteId ?? null, index: i }));
       m.on('mouseover', () => hoverActions(m.getLatLng(), [
         { act: 'fill', label: '⊕', title: 'Fill the leg before this stop with more Superchargers' },
@@ -224,7 +262,8 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
       m.on('mouseout', () => { if (actionsEl.dataset.kind === 'stop') hideActions(); });
       m.addTo(stopLayer);
     });
-    if (destination) L.marker([destination.lat, destination.lng], { icon: stopIcon('dest', 'D', destination.batt, 0), zIndexOffset: 950 }).bindTooltip(destination.name || 'Destination').addTo(stopLayer);
+    if (destination) L.marker([destination.lat, destination.lng], { icon: stopIcon('dest', 'D', destination.batt, [0, 0]), zIndexOffset: 950 }).bindTooltip(destination.name || 'Destination').addTo(stopLayer);
+    declutterStops();
   }
 
   let lastCands = [];
@@ -250,6 +289,21 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
   }
 
   function highlightCount() { return hlLayer.getLayers().length; }
+
+  /** While replacing a stop, hovering another site draws an animated dashed hint from it. */
+  function setReplaceMode(latlng) {
+    replaceAnchor = latlng || null;
+    if (!replaceAnchor) hintLayer.clearLayers();
+    el.classList.toggle('replacing', !!replaceAnchor);
+  }
+
+  function replaceHint(latlng) {
+    hintLayer.clearLayers();
+    if (!replaceAnchor || !latlng) return;
+    L.polyline([[replaceAnchor.lat, replaceAnchor.lng], [latlng.lat, latlng.lng]], { color: '#3b82f6', weight: 2.5, dashArray: '8 8', className: 'replace-hint', interactive: false, renderer: L.svg() }).addTo(hintLayer);
+  }
+
+  function hintCount() { return hintLayer.getLayers().length; }
 
   function fitTo(points) {
     const pts = points.filter(p => p && Number.isFinite(p[0]) && Number.isFinite(p[1]));
@@ -329,5 +383,5 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
     return n;
   }
 
-  return { map, setTiles, setSites, restyle, setRoute, setStops, setCandidates, fitTo, openSite, panToShow, applyFilter, highlight, highlightCount, visibleCount, isVisible, pinsVisible, pinsTotal, hideActions, on, closePopup: () => map.closePopup(), size: () => markers.size };
+  return { map, setTiles, setSites, restyle, setRoute, setStops, setCandidates, fitTo, openSite, panToShow, applyFilter, highlight, highlightCount, setReplaceMode, hintCount, visibleCount, isVisible, pinsVisible, pinsTotal, hideActions, on, closePopup: () => map.closePopup(), size: () => markers.size };
 }

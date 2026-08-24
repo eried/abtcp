@@ -15,12 +15,14 @@ import { createSidebar } from './ui/sidebar.js';
 import { renderItinerary, itineraryHeader } from './ui/itinerary.js';
 import { renderSettings, bindSettings } from './ui/settings.js';
 import { createToast } from './ui/toast.js';
+import { createBusy } from './ui/busy.js';
 import { fmt, esc, slug, socClass } from './ui/format.js';
 
 const $ = id => document.getElementById(id);
 
 async function main() {
   const toast = createToast($('toast'));
+  const busy = createBusy($('busy'));
   const setStatus = msg => { $('status').textContent = msg || ''; };
   const store = createStore();
   const restored = store.load();
@@ -48,7 +50,7 @@ async function main() {
   const planner = createPlanner({ store, db, osrm, elevation, weatherAt: args => weatherAt({ ...args, queue: weatherQueue }) });
 
   const map = createMap({ el: $('map'), tiles: store.trip.settings.tiles });
-  const sidebar = createSidebar({ el: $('panel-trip'), store, db, planner, geocode, map, toast, setStatus });
+  const sidebar = createSidebar({ el: $('panel-trip'), store, db, planner, geocode, map, toast, setStatus, busy });
 
   // ---------- map filter: All | Reachable | Iconic ----------
   const filterBar = document.createElement('div');
@@ -124,7 +126,7 @@ async function main() {
 
   map.on('stopClick', ({ siteId }) => { if (siteId != null) map.openSite(siteId); });
   map.on('mapAction', ({ act, siteId, stopId, legIndex }) => {
-    if (act === 'add') { const site = db.byId(siteId); if (site) sidebar.addStop(site); }
+    if (act === 'add' || act === 'replace-with') { const site = db.byId(siteId); if (site) sidebar.addStop(site); }
     else if (act === 'remove' && stopId) sidebar.removeStop(stopId);
     else if (act === 'replace' && stopId) sidebar.startReplace(stopId);
     else if (act === 'fill' && legIndex != null) sidebar.fillGap(legIndex);
@@ -338,7 +340,11 @@ async function main() {
     m.list.addEventListener('click', () => setTimeout(() => closeMenus(), 0));
   }
   document.addEventListener('click', e => { for (const m of menus) if (!m.list.hidden && !m.list.contains(e.target) && e.target !== m.btn) { m.list.hidden = true; m.btn.setAttribute('aria-expanded', 'false'); } });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenus(); });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    closeMenus();
+    if (sidebar.replacingId) sidebar.cancelReplace();
+  });
 
   $('btn-rename').addEventListener('click', () => {
     const name = window.prompt('Trip name', store.trip.meta.name);
@@ -349,9 +355,16 @@ async function main() {
 
   $('btn-fit').addEventListener('click', () => map.fitTo(sidebar.tripPoints()));
   $('btn-recompute').addEventListener('click', async () => {
+    const n = store.trip.stops.length + (store.trip.destination ? 1 : 0);
+    busy.start({ title: 'Recomputing routes and weather', total: n });
     setStatus('Re-routing…');
-    try { await planner.ensureLegs({ force: true, onProgress: (i, n) => setStatus(`Re-routing ${i}/${n}…`) }); toast.success('All legs recomputed'); }
-    catch (e) { toast.error(`Recompute failed: ${e.message}`); }
+    try {
+      await planner.ensureLegs({ force: true, onProgress: (i, total) => { busy.update({ done: i, text: `leg ${i} of ${total}` }); setStatus(`Re-routing ${i}/${total}…`); } });
+      toast.success('All legs recomputed');
+    } catch (e) {
+      toast.error(`Recompute failed: ${e.message}`);
+    }
+    busy.stop();
     setStatus('');
     sidebar.refreshCandidates(true);
   });

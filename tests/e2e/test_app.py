@@ -421,6 +421,7 @@ def test_plan_export_import(page, url, log):
     stops_before = page.evaluate("window.__abtcp.store.trip.stops.length")
     low_before = page.evaluate("window.__abtcp.timeline.stops.filter(r => r.arrivalSoc < window.__abtcp.store.trip.settings.reserveSoc).length")
     added = page.evaluate("window.__abtcp.planner.densify({ maxDetourKm: 60, maxAdds: 3 })")
+    assert page.evaluate("document.getElementById('busy').hidden") is True, "overlay must not linger"
     assert added >= 1, "densify inserted nothing"
     assert page.evaluate("window.__abtcp.store.trip.stops.length") == stops_before + added
     wait_legs(page)
@@ -439,9 +440,13 @@ def test_plan_export_import(page, url, log):
     n0 = page.locator(".stop[data-id]").count()
     set_value(page, "#densify-km", "120")
     page.click('.stop[data-index="1"] [data-act="fillgap"]')
+    page.wait_for_selector("#busy:not([hidden])", timeout=5000)
+    assert "Filling the leg" in page.text_content(".busy-title")
+    assert page.locator("#busy-stop").is_visible()
     page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length > {n0}", timeout=60000)
     wait_legs(page)
     n1 = page.locator(".stop[data-id]").count()
+    page.wait_for_function("document.getElementById('busy').hidden === true", timeout=30000)
     assert page.evaluate("window.__abtcp.timeline.stops.every(r => r.leg.status === 'ok')")
 
     # --- undo / redo restores the previous plan

@@ -83,6 +83,7 @@ export function compute(trip) {
   const counted = new Set();
   let lastStart = null, lastEnd = null;
   let currentStreak = 0, longestStreak = 0, firstBreakIndex = -1;
+  let strandedIndex = -1;
   let totalKm = 0, driveH = 0, ferryH = 0, chargeH = 0, kwhBilled = 0, kwhStored = 0, pendingLegs = 0, failedLegs = 0;
   let minSoc = soc;
 
@@ -104,18 +105,32 @@ export function compute(trip) {
       pendingLegs++;
       warnings.push({ level: 'info', msg: 'Route not computed yet' });
     }
+    const wasStranded = strandedIndex >= 0;
     if (legEval.status === 'ok') {
-      if (arrivalSoc < 0) warnings.push({ level: 'error', msg: `Unreachable: arrives at ${arrivalSoc.toFixed(0)} %` });
-      else if (arrivalSoc < S.reserveSoc) warnings.push({ level: 'warn', msg: `Arrives below reserve (${arrivalSoc.toFixed(0)} % < ${S.reserveSoc} %)` });
+      if (arrivalSoc < 0 && !wasStranded) {
+        strandedIndex = i;
+        warnings.push({ level: 'error', msg: `Unreachable: arrives at ${arrivalSoc.toFixed(0)} % — the car runs out before this stop` });
+      } else if (wasStranded) {
+        warnings.push({ level: 'error', msg: `Not reachable: the car already ran out at stop #${strandedIndex + 1}` });
+      } else if (arrivalSoc < S.reserveSoc) {
+        warnings.push({ level: 'warn', msg: `Arrives below reserve (${arrivalSoc.toFixed(0)} % < ${S.reserveSoc} %)` });
+      }
+    } else if (wasStranded) {
+      warnings.push({ level: 'error', msg: `Not reachable: the car already ran out at stop #${strandedIndex + 1}` });
     }
     minSoc = Math.min(minSoc, arrivalSoc);
+    const stranded = strandedIndex >= 0;
 
     let t = arrival;
-    let s = Math.max(0, arrivalSoc);
+    // A car that never arrived cannot charge: keep the deficit visible instead of clamping to 0
+    // and inventing a charging session (which would make every later stop look fine).
+    let s = stranded ? arrivalSoc : Math.max(0, arrivalSoc);
     const tempC = legEval.temp ?? effectiveWeather(null, S).tempC;
     let session = null;
 
-    if (stop.charge && stop.kind === 'charger') {
+    if (stranded) {
+      // no session, no rest recovery — the plan is broken from here until the gap is fixed
+    } else if (stop.charge && stop.kind === 'charger') {
       const target = Math.max(+stop.charge.targetSoc, Math.min(100, s + (+S.rules.minSessionPct || 0)));
       const coldStart = tempC < 5 && !S.precondition;
       const sess = chargeSession({ car, siteKw: stop.kw, fromSoc: s, toSoc: target, coldStart, overheadMin: S.plugOverheadMin });
@@ -166,7 +181,11 @@ export function compute(trip) {
     }
 
     let rest = null;
-    if (stop.rest && +stop.rest.hours > 0) {
+    if (stranded && stop.rest && +stop.rest.hours > 0) {
+      const hours = +stop.rest.hours;
+      rest = { start: t, end: t + hours * H, hours, drainPct: 0, sentry: !!stop.rest.sentry };
+      t = rest.end;
+    } else if (stop.rest && +stop.rest.hours > 0) {
       const hours = +stop.rest.hours;
       const drainPct = restDrainPctPerH(!!stop.rest.sentry, tempC, S.sentry) * hours;
       rest = { start: t, end: t + hours * H, hours, drainPct, sentry: !!stop.rest.sentry };
@@ -180,7 +199,7 @@ export function compute(trip) {
     };
     timer.deadlineInH = timer.deadline == null ? null : (timer.deadline - t) / H; // time left when leaving this stop
 
-    const r = { i, stop, leg: legEval, arrival, arrivalSoc, session, rest, depart: t, departSoc: s, warnings, timer, minUsefulSoc: null };
+    const r = { i, stop, leg: legEval, arrival, arrivalSoc, session, rest, depart: t, departSoc: s, warnings, timer, minUsefulSoc: null, stranded };
     time = t;
     soc = s;
     prev = stop;
@@ -232,7 +251,7 @@ export function compute(trip) {
   const summary = {
     uniqueCounted: counted.size, longestStreak, currentStreak, firstBreakIndex, newForYear,
     totalKm, totalDriveH: driveH, totalFerryH: ferryH, totalTimeH: (eta - startTime) / H, chargeH, kwhBilled, kwhStored,
-    eta, minSoc, pendingLegs, failedLegs, nextDeadline, endSoc: soc,
+    eta, minSoc, pendingLegs, failedLegs, nextDeadline, endSoc: soc, strandedIndex,
     warnings: results.flatMap(r => r.warnings.filter(w => w.level !== 'info').map(w => ({ i: r.i, ...w })))
       .concat(destResult ? destResult.warnings.filter(w => w.level !== 'info').map(w => ({ i: results.length, ...w })) : []),
   };

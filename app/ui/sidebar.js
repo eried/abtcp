@@ -7,7 +7,7 @@ import { haversineM } from '../model/geo.js';
 const teslaUrl = tid => `https://www.tesla.com/findus/location/supercharger/${encodeURIComponent(tid)}`;
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
-export function createSidebar({ el, store, db, planner, geocode, map, toast, setStatus = () => {} }) {
+export function createSidebar({ el, store, db, planner, geocode, map, toast, setStatus = () => {}, busy = null }) {
   let tl = null;
   let cands = { key: null, list: [], loading: false, error: null };
   const search = { start: { q: '', results: [], busy: false }, dest: { q: '', results: [], busy: false } };
@@ -148,7 +148,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     const isCharger = stop.kind === 'charger';
     const hasErr = r.warnings.some(w => w.level === 'error');
     const hasWarn = r.warnings.some(w => w.level === 'warn');
-    const cls = ['stop', isCharger ? 'charger' : 'point', (r.session && r.session.broken) || hasErr ? 'broken' : hasWarn ? 'warn' : '', stop.id === replaceId ? 'replacing' : ''].join(' ');
+    const cls = ['stop', isCharger ? 'charger' : 'point', (r.session && r.session.broken) || hasErr ? 'broken' : hasWarn ? 'warn' : '', stop.id === replaceId ? 'replacing' : '', r.stranded ? 'stranded' : ''].join(' ');
     const meta = isCharger
       ? `${esc(stop.country)} · ${stop.stalls} stalls · ${stop.kw || '?'} kW · ${STATUS_LABEL[stop.status] || stop.status || ''}`
       : `${(+stop.lat).toFixed(4)}, ${(+stop.lng).toFixed(4)}`;
@@ -229,7 +229,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     const last = trip.stops[trip.stops.length - 1];
     const from = last ? last.name : trip.start.name;
     return `<section class="card candidates">
-      <header><h3>${replaceId ? 'Replacing a stop — pick a site' : `Next stop from ${esc(from)}`}</h3><label class="toward" title="${trip.destination ? 'Only list sites that actually bring you closer to the destination by road — hides detours and dead ends such as fjord peninsulas. Untick to see every nearby site.' : 'Set a destination to filter suggestions to sites that make progress toward it.'}"><input type="checkbox" id="cand-toward" ${trip.settings.candidates.toward ? 'checked' : ''} ${trip.destination ? '' : 'disabled'}> ${trip.destination ? 'toward destination' : 'toward (needs a destination)'}</label><button class="ghost" id="btn-cand-refresh" title="Refresh">↻</button></header>
+      <header><h3>${replaceId ? `Replacing stop #${store.trip.stops.findIndex(s => s.id === replaceId) + 1} — pick a site` : `Next stop from ${esc(from)}`}</h3>${replaceId ? '<button class="ghost" id="btn-cancel-replace" title="Keep the current charger (Esc)">✕ cancel</button>' : ''}<label class="toward" title="${trip.destination ? 'Only list sites that actually bring you closer to the destination by road — hides detours and dead ends such as fjord peninsulas. Untick to see every nearby site.' : 'Set a destination to filter suggestions to sites that make progress toward it.'}"><input type="checkbox" id="cand-toward" ${trip.settings.candidates.toward ? 'checked' : ''} ${trip.destination ? '' : 'disabled'}> ${trip.destination ? 'toward destination' : 'toward (needs a destination)'}</label><button class="ghost" id="btn-cand-refresh" title="Refresh">↻</button></header>
       <div id="candidates">${candidatesListHtml()}</div>
       <div class="autochain"><input type="number" id="autochain-n" value="5" min="1" max="80" aria-label="Number of stops to add">${chaining ? '<button id="btn-chain-stop" class="danger">Stop</button>' : '<button id="btn-autochain" class="primary" title="Greedily add the nearest new sites (toward the destination if set)">Auto-chain stops</button>'}<span class="status" id="autochain-status"></span></div>
       <div class="autochain densify"><label title="Extra kilometres a site may add to a leg to be worth inserting">detour ≤ <input type="number" id="densify-km" value="${densifyKm}" min="1" max="200"> km</label><button id="btn-densify" title="Insert every extra Supercharger that fits between the stops you already have (and before the destination) without exceeding the detour, and without forcing a charge above the maximum set in Settings — maximises unique sites">⊕ Fill gaps with more sites</button></div>
@@ -315,6 +315,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
   function performReplace(site) {
     const rid = replaceId;
     replaceId = null;
+    map.setReplaceMode(null);
     let idx = -1;
     store.batch(async () => {
     store.update(t => {
@@ -360,10 +361,21 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     buildMissing().then(() => { planner.pruneLegs(); refreshCandidates(true); });
   }
 
+  function cancelReplace() {
+    if (!replaceId) return;
+    replaceId = null;
+    map.setReplaceMode(null);
+    toast.show('Replace cancelled');
+    render(tl);
+    refreshCandidates(true);
+  }
+
   function startReplace(id) {
     const i = store.trip.stops.findIndex(s => s.id === id);
     if (i < 0) return;
     replaceId = id;
+    const st = store.trip.stops[i];
+    map.setReplaceMode({ lat: st.lat, lng: st.lng });
     toast.show(`Pick a charger from the map or the list below to replace stop #${i + 1} (charge/rest settings are kept)`);
     render(tl);
     refreshCandidates(true);
@@ -429,17 +441,23 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     renderCandidates();
     let added = 0;
     try {
+      const maxAdds = gapIndex == null ? 40 : 10;
+      if (busy) busy.start({ title: gapIndex == null ? 'Filling every gap with more Superchargers' : `Filling the leg${where}`, onCancel: () => { stopChain = true; } });
       added = await store.batch(() => planner.densify({
         maxDetourKm: km,
-        maxAdds: gapIndex == null ? 40 : 10,
+        maxAdds,
         gapIndex,
         shouldStop: () => stopChain,
-        onProgress: (a, max, stop, best) => setStatus(`Fill gaps ${a}: ${stop.name} (+${Math.round(best.detourKm)} km)`),
+        onProgress: (a, max, stop, best) => {
+          setStatus(`Fill gaps ${a}: ${stop.name} (+${Math.round(best.detourKm)} km)`);
+          if (busy) busy.update({ done: a, text: `${stop.name} (+${Math.round(best.detourKm)} km detour)`, log: `+ ${stop.name} · detour ${Math.round(best.detourKm)} km` });
+        },
       }));
       toast.success(added ? `Inserted ${added} extra site${added === 1 ? '' : 's'}${where} (detour ≤ ${km} km, never charging above ${cap} %)` : `Nothing fits${where} within ${km} km detour and a ${cap} % charge cap — raise either`);
     } catch (e) {
       toast.error(`Fill gaps failed: ${(e && e.message) || e}`);
     }
+    if (busy) busy.stop();
     chaining = false;
     setStatus('');
     refreshCandidates(true);
@@ -452,16 +470,23 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     const n = Math.max(1, Number(el.querySelector('#autochain-n')?.value) || 5);
     renderCandidates();
     let added = 0;
+    if (busy) busy.start({ title: `Auto-chaining up to ${n} stop${n === 1 ? '' : 's'}`, total: n, onCancel: () => { stopChain = true; } });
     try {
       added = await store.batch(() => planner.autoChain({
         n,
         shouldStop: () => stopChain,
-        onProgress: (a, total, stop) => { setStatus(`Auto-chain ${a}/${total}: ${stop.name}`); const st = el.querySelector('#autochain-status'); if (st) st.textContent = `${a}/${total} · ${stop.name}`; },
+        onProgress: (a, total, stop, res) => {
+          setStatus(`Auto-chain ${a}/${total}: ${stop.name}`);
+          const st = el.querySelector('#autochain-status');
+          if (st) st.textContent = `${a}/${total} · ${stop.name}`;
+          if (busy) busy.update({ done: a, text: stop.name, log: `+ ${stop.name}${res ? ` · arrive ${Math.round(res.arrivalSoc)} %` : ''}` });
+        },
       }));
       toast.success(added ? `Added ${added} stop${added === 1 ? '' : 's'}` : 'No reachable new site found — raise the charge targets or the search radius');
     } catch (e) {
       toast.error(`Auto-chain failed: ${(e && e.message) || e}`);
     }
+    if (busy) busy.stop();
     chaining = false;
     setStatus('');
     refreshCandidates(true);
@@ -474,13 +499,15 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     stopChain = false;
     renderCandidates();
     let added = 0;
+    if (busy) busy.start({ title: 'Inserting stops until this one is reachable', onCancel: () => { stopChain = true; } });
     try {
-      added = await store.batch(() => planner.autoChain({ n: 10, beforeId: id, shouldStop: () => stopChain, onProgress: (a, total, stop) => setStatus(`Inserting ${a}: ${stop.name}`) }));
+      added = await store.batch(() => planner.autoChain({ n: 10, beforeId: id, shouldStop: () => stopChain, onProgress: (a, total, stop) => { setStatus(`Inserting ${a}: ${stop.name}`); if (busy) busy.update({ done: a, text: stop.name, log: `+ ${stop.name}` }); } }));
       if (added) toast.success(`Inserted ${added} stop${added === 1 ? '' : 's'}`);
       else toast.error('No reachable intermediate site found — raise the previous charge target or the search radius');
     } catch (e) {
       toast.error(`Insert failed: ${(e && e.message) || e}`);
     }
+    if (busy) busy.stop();
     chaining = false;
     setStatus('');
     refreshCandidates(true);
@@ -574,6 +601,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     if (b.id === 'btn-dest-map') { pickMode = pickMode === 'dest' ? null : 'dest'; toast.show(pickMode ? 'Click on the map to set the destination' : 'Cancelled'); render(tl); return; }
     if (b.id === 'btn-roundtrip') { const st = store.trip.start; setDestination({ lat: st.lat, lng: st.lng, name: `Back to ${st.name}` }); render(tl); return; }
     if (b.id === 'btn-dest-clear') { setDestination(null); render(tl); return; }
+    if (b.id === 'btn-cancel-replace') { cancelReplace(); return; }
     if (b.id === 'btn-cand-refresh') { refreshCandidates(true); return; }
     if (b.id === 'btn-autochain') { runAutoChain(); return; }
     if (b.id === 'btn-densify') { runDensify(); return; }
@@ -596,10 +624,8 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
       if (s.siteId != null) map.openSite(s.siteId);
       else map.panToShow(s.lat, s.lng);
     } else if (b.dataset.act === 'swap') {
-      replaceId = replaceId === id ? null : id;
-      toast.show(replaceId ? `Pick a charger from the map or the list below to replace stop #${index + 1} (charge/rest settings are kept)` : 'Replace cancelled');
-      render(tl);
-      refreshCandidates(true);
+      if (replaceId === id) cancelReplace();
+      else startReplace(id);
     }
   });
 
@@ -617,6 +643,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
   el.addEventListener('mouseleave', () => map.highlight(null));
 
   map.on('mapClick', ({ lat, lng }) => {
+    if (!pickMode && replaceId) { cancelReplace(); return; } // clicking empty map leaves replace mode
     if (!pickMode) return;
     const mode = pickMode;
     pickMode = null;
@@ -625,5 +652,5 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     toast.success(mode === 'start' ? 'Start set' : 'Destination set');
   });
 
-  return { render, refreshCandidates, addStop, addPoint, setStart, setDestination, removeStop, startReplace, fillGap, buildMissing, tripPoints, replaceWith, get replacingId() { return replaceId; }, get candidates() { return cands; } };
+  return { render, refreshCandidates, addStop, addPoint, setStart, setDestination, removeStop, startReplace, cancelReplace, fillGap, buildMissing, tripPoints, replaceWith, get replacingId() { return replaceId; }, get candidates() { return cands; } };
 }
