@@ -13,14 +13,38 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
   const search = { start: { q: '', results: [], busy: false }, dest: { q: '', results: [], busy: false } };
   let pickMode = null;
   let replaceId = null;
+  let pendingRender = false;
+  let deferHooked = false;
   let chaining = false;
   let stopChain = false;
   let building = false;
 
   // ---------- rendering ----------
+  /** Fields whose value the user is actively editing must survive a re-render untouched. */
+  const EDITING = new Set(['datetime-local', 'number', 'text', 'url', 'time', 'date']);
+
   function render(timeline) {
     tl = timeline;
     const active = document.activeElement;
+    // A live re-render would destroy the node being typed into (a datetime-local loses focus
+    // and the half-typed value). Defer instead, and repaint once the field is left.
+    if (active && el.contains(active) && active.tagName === 'INPUT' && EDITING.has(active.type)) {
+      pendingRender = true;
+      if (!deferHooked) {
+        deferHooked = true;
+        el.addEventListener('focusout', () => {
+          setTimeout(() => {
+            const a = document.activeElement;
+            if (a && el.contains(a) && a.tagName === 'INPUT' && EDITING.has(a.type)) return;
+            deferHooked = false;
+            if (pendingRender && tl) { pendingRender = false; render(tl); }
+          }, 0);
+        }, { once: true });
+      }
+      map.setCandidates(candidatesWithSoc());
+      return;
+    }
+    pendingRender = false;
     const keep = active && el.contains(active) && active.id ? { id: active.id, value: active.value, pos: active.selectionStart } : null;
     el.innerHTML = html();
     if (keep) {
@@ -64,9 +88,38 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
       <div class="search"><input type="text" id="dest-search" placeholder="Optional: where are you heading?" value="${esc(search.dest.q)}" autocomplete="off"><div class="results" id="dest-results">${resultsHtml('dest')}</div></div>
       ${dest ? `<div class="place"><b id="dest-name">${esc(dest.name)}</b><small>${Math.round(straight)} km straight line from the start · routed as the final leg below</small></div>` : '<small>With a destination, “Next stop” prefers sites that make progress by road, and the final leg is routed and timed.</small>'}
     </div>
-    <div id="stops">${tl.stops.map(stopHtml).join('') || '<div class="card muted">No stops yet. Pick one from “Next stop” below, or click a red dot on the map.</div>'}</div>
+    <div id="stops">${stopsHtml() || '<div class="card muted">No stops yet. Pick one from “Next stop” below, or click a red dot on the map.</div>'}</div>
     ${tl.destination ? destHtml(tl.destination) : ''}
     ${candidatesHtml()}`;
+  }
+
+  const dayNo = ms => Math.floor((new Date(ms).setHours(0, 0, 0, 0) - new Date(tl.startTime).setHours(0, 0, 0, 0)) / 864e5);
+
+  /** Stop cards with a "Day N" separator wherever the calendar day changes. */
+  function stopsHtml() {
+    let out = '';
+    let prevDay = dayNo(tl.startTime);
+    for (const r of tl.stops) {
+      const d = dayNo(r.arrival);
+      if (d > prevDay) {
+        for (let k = prevDay + 1; k <= d; k++) {
+          const at = tl.startTime + k * 864e5;
+          out += `<div class="day-sep"><span>Day ${k + 1} · ${esc(fmt.day(at))}</span></div>`;
+        }
+        prevDay = d;
+      }
+      out += stopHtml(r);
+      const dep = dayNo(r.depart); // a long rest can push the departure into later days
+      if (dep > prevDay) prevDay = dep - 1;
+    }
+    if (tl.destination && tl.destination.leg.status === 'ok') {
+      const d = dayNo(tl.destination.arrival);
+      for (let k = prevDay + 1; k <= d; k++) {
+        const at = tl.startTime + k * 864e5;
+        out += `<div class="day-sep"><span>Day ${k + 1} · ${esc(fmt.day(at))}</span></div>`;
+      }
+    }
+    return out;
   }
 
   function battHtml(arr, dep, reserve) {

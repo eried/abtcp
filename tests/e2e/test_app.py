@@ -299,6 +299,19 @@ def test_plan_export_import(page, url, log):
     wait_legs(page)
     assert page.locator(".stop-icon .pass").count() == 0
 
+    # --- day separators appear where the plan crosses midnight (30 h rest)
+    seps = page.eval_on_selector_all(".day-sep span", "els => els.map(e => e.textContent)")
+    assert len(seps) >= 1, "a Day divider after the 30 h rest"
+    assert seps[0].startswith("Day 2"), seps
+
+    # --- the departure field keeps focus while typing (a re-render must not steal it)
+    page.click("#start-time")
+    page.evaluate("window.__abtcp.store.update(t => { t.meta.name = t.meta.name; })")
+    page.wait_for_timeout(150)
+    assert page.evaluate("document.activeElement && document.activeElement.id") == "start-time", "datetime field lost focus on re-render"
+    page.click("#stops")
+    page.wait_for_timeout(150)
+
     # --- itinerary calendar view
     page.click("#btn-itinerary")
     page.wait_for_selector(".itin-ev", timeout=5000)

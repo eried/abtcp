@@ -217,6 +217,11 @@ main { display: flex; flex: 1; min-height: 0; }
 .batt-lbl { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .stop.replacing { outline: 2px dashed var(--blue); }
 
+/* Day separator between stop cards */
+.day-sep { display: flex; align-items: center; gap: 8px; margin: 2px 0 10px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .09em; }
+.day-sep::before, .day-sep::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.day-sep span { background: var(--bg-3); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; white-space: nowrap; font-weight: 600; }
+
 /* Map filter chips */
 #map-filters { position: absolute; top: 10px; right: 10px; z-index: 660; display: flex; }
 #map-filters .chip { background: rgba(11,15,20,.92); border: 1px solid var(--line); border-left-width: 0; color: var(--text); font-size: 12px; padding: 5px 11px; border-radius: 0; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
