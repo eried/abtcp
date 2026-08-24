@@ -136,3 +136,24 @@ test('batch groups a whole action into one undo step; updateQuiet stays out of h
   assert.equal(store.canUndo(), before, 'a cache write adds no history entry');
   assert.equal(store.trip.legs.k2.status, 'ok');
 });
+
+test('a batch, import or reset is never coalesced into the previous edit', async () => {
+  let clock = 0;
+  const store = createStore({ storage: null, trip: defaultTrip(new Date(2026, 0, 1)), coalesceMs: 500, now: () => clock });
+  store.update(t => { t.stops.push(newStop({ lat: 1, lng: 1, name: 'A' })); });
+  clock += 50; // a batch starting right after an edit must still be its own undo step
+  await store.batch(async () => {
+    store.update(t => { t.stops.push(newStop({ lat: 2, lng: 2, name: 'B' })); });
+    store.update(t => { t.stops.push(newStop({ lat: 3, lng: 3, name: 'C' })); });
+  });
+  assert.deepEqual(store.trip.stops.map(s => s.name), ['A', 'B', 'C']);
+  assert.equal(store.undo(), true);
+  assert.deepEqual(store.trip.stops.map(s => s.name), ['A'], 'one undo reverts only the batch');
+  assert.equal(store.undo(), true);
+  assert.deepEqual(store.trip.stops.map(s => s.name), []);
+  clock += 10;
+  store.replace(defaultTrip(new Date(2026, 0, 2)));
+  clock += 10;
+  store.reset();
+  assert.equal(store.historyDepth().undo, 2, 'replace and reset each add a step');
+});

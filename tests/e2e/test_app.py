@@ -344,7 +344,7 @@ def test_plan_export_import(page, url, log):
     page.mouse.move(box["x"], box["y"])
     page.wait_for_selector("#map-actions button[data-act='remove']", timeout=5000)
     assert page.locator("#map-actions button[data-act='replace']").count() == 1
-    assert page.locator("#map-actions button[data-act='fill']").count() == 1
+    assert page.locator("#map-actions button[data-act='fill']").count() == 0, "filling belongs to legs, not to a stop marker"
     page.click("#map-actions button[data-act='remove']")
     page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length === {n_before - 1}", timeout=20000)
     wait_legs(page)
@@ -425,39 +425,42 @@ def test_plan_export_import(page, url, log):
     page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length === {n_before}", timeout=15000)
     wait_legs(page)
 
-    # --- densify inserts extra sites within the detour budget and the charge cap
+    # --- one fill action, between two stops, bounded per click
     stops_before = page.evaluate("window.__abtcp.store.trip.stops.length")
     low_before = page.evaluate("window.__abtcp.timeline.stops.filter(r => r.arrivalSoc < window.__abtcp.store.trip.settings.reserveSoc).length")
-    added = page.evaluate("window.__abtcp.planner.densify({ maxDetourKm: 60, maxAdds: 3 })")
-    assert page.evaluate("document.getElementById('busy').hidden") is True, "overlay must not linger"
-    assert added >= 1, "densify inserted nothing"
+    expected_rows = stops_before + (1 if page.evaluate("!!window.__abtcp.store.trip.destination") else 0)
+    assert page.locator(".gap-row [data-act='fill-gap']").count() == expected_rows, "one insert affordance per leg (destination included)"
+    assert page.locator("#btn-autochain").count() == 0, "auto-chain is gone"
+    assert page.locator("#btn-densify").count() == 0, "global fill-gaps is gone"
+    ids_before = page.evaluate("window.__abtcp.store.trip.stops.map(s => s.id)")
+    added = page.evaluate("window.__abtcp.planner.fillLeg({ gapIndex: 1, maxAdds: 2 })")
+    assert added >= 1, "fill inserted nothing"
     assert page.evaluate("window.__abtcp.store.trip.stops.length") == stops_before + added
     wait_legs(page)
-    assert page.evaluate("window.__abtcp.timeline.stops.every(r => r.leg.status === 'ok')"), "all legs routed after densify"
+    assert page.evaluate("window.__abtcp.timeline.stops.every(r => r.leg.status === 'ok')"), "all legs routed after filling"
     cap = page.evaluate("window.__abtcp.store.trip.settings.maxChargeSoc")
     assert page.evaluate(f"window.__abtcp.store.trip.stops.every(s => !s.charge || s.charge.targetSoc <= {cap})"), "a stop was pushed above the charge cap"
     low_after = page.evaluate("window.__abtcp.timeline.stops.filter(r => r.arrivalSoc < window.__abtcp.store.trip.settings.reserveSoc).length")
-    assert low_after <= low_before, f"densify made reachability worse ({low_before} -> {low_after} legs below reserve)"
-    # a 0 km detour budget must insert nothing
-    assert page.evaluate("window.__abtcp.planner.densify({ maxDetourKm: 0, maxAdds: 2 })") == 0
-    for _ in range(added):
-        page.evaluate("window.__abtcp.sidebar.removeStop(window.__abtcp.store.trip.stops.at(-1).id)")
+    assert low_after <= low_before, f"filling made reachability worse ({low_before} -> {low_after})"
+    # remove exactly what the fill inserted (they land in the middle, not at the end)
+    page.evaluate("(keep) => { const set = new Set(keep); window.__abtcp.store.update(t => { t.stops = t.stops.filter(s => set.has(s.id)); }); }", ids_before)
+    page.evaluate("window.__abtcp.sidebar.buildMissing()")
+    page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length === {stops_before}", timeout=20000)
     wait_legs(page)
 
-    # --- per-gap fill: the ⊕ button on a card only touches that leg
+    # --- the gap row between two cards fills exactly that leg, with a progress overlay
     n0 = page.locator(".stop[data-id]").count()
-    set_value(page, "#densify-km", "120")
-    page.click('.stop[data-index="1"] [data-act="fillgap"]')
-    page.wait_for_selector("#busy:not([hidden])", timeout=5000)
-    assert "Filling the leg" in page.text_content(".busy-title")
-    assert page.locator("#busy-stop").is_visible()
-    page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length > {n0}", timeout=60000)
+    page.evaluate("window.__busySeen = false; const o = new MutationObserver(() => { if (!document.getElementById('busy').hidden) window.__busySeen = true; }); o.observe(document.getElementById('busy'), { attributes: true });")
+    page.click('.gap-row[data-gap="1"] [data-act="fill-gap"]')
+    page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length > {n0} || document.querySelector('#toast').textContent.includes('Nothing fits')", timeout=60000)
+    page.wait_for_function("document.getElementById('busy').hidden === true", timeout=60000)
+    assert page.evaluate("window.__busySeen") is True, "the progress overlay should show while filling"
     wait_legs(page)
     n1 = page.locator(".stop[data-id]").count()
-    page.wait_for_function("document.getElementById('busy').hidden === true", timeout=30000)
+    assert n1 > n0, "the gap row added at least one site"
     assert page.evaluate("window.__abtcp.timeline.stops.every(r => r.leg.status === 'ok')")
 
-    # --- undo / redo restores the previous plan
+    # --- undo / redo restores the previous plan (a fill is one undo step)
     page.click("#btn-undo")
     page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length === {n0}", timeout=15000)
     page.click("#btn-redo")

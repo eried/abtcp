@@ -256,10 +256,9 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
       stopMarkers.push({ marker: m, latlng: L.latLng(s.lat, s.lng), cls: s.cls || '', label: String(i + 1), batt: s.batt, pass });
       m.on('click', () => emit('stopClick', { siteId: s.siteId ?? null, index: i }));
       m.on('mouseover', () => hoverActions(m.getLatLng(), [
-        { act: 'fill', label: '⊕', title: 'Fill the leg before this stop with more Superchargers' },
         { act: 'replace', label: '⇄', title: 'Replace this charger with another site' },
         { act: 'remove', label: '✕', title: 'Remove this stop' },
-      ], { stopId: s.id, index: i, legIndex: i }, 'stop'));
+      ], { stopId: s.id, index: i }, 'stop'));
       m.on('mouseout', () => { if (actionsEl.dataset.kind === 'stop') hideActions(); });
       m.addTo(stopLayer);
     });

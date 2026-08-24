@@ -12,6 +12,7 @@ export function defaultSettings() {
     marginPct: 5,
     defaultTargetSoc: 60,
     maxChargeSoc: 90,
+    fill: { startDetourKm: 10, maxDetourKm: 60, perRun: 3 },
     sentry: { onPctH: 0.2, offPctH: 0.04, coldFactor: 1.3 },
     ferryWaitMin: 30,
     plugOverheadMin: 3,
@@ -123,13 +124,16 @@ export function createStore({ storage = globalThis.localStorage ?? null, key = S
     return migrate(obj);
   };
   let batching = 0;
-  const pushHistory = () => {
+  /**
+   * `force` marks a deliberate action boundary (a batch, an import, a reset): those must never
+   * be merged into a neighbouring entry, otherwise one undo would jump two steps back.
+   */
+  const pushHistory = (force = false) => {
     if (batching > 0) return; // inside a batch the entry was taken before the first change
-    const text = snap(current);
     const t = now();
-    if (undoStack.length && t - lastPush < coalesceMs) undoStack[undoStack.length - 1] = undoStack[undoStack.length - 1];
-    else {
-      undoStack.push(text);
+    const coalesce = !force && undoStack.length && t - lastPush < coalesceMs;
+    if (!coalesce) {
+      undoStack.push(snap(current));
       if (undoStack.length > historyLimit) undoStack.shift();
     }
     lastPush = t;
@@ -146,13 +150,14 @@ export function createStore({ storage = globalThis.localStorage ?? null, key = S
     updateQuiet(fn) { fn(current); save(); emit(); },
     /** Group a whole user action (auto-chain, fill gaps, add/remove stop) into one undo step. */
     async batch(fn) {
-      if (batching === 0) { pushHistory(); lastPush = now() + 1e9; } // block coalescing inside
+      if (batching === 0) { pushHistory(true); lastPush = now() + 1e9; } // block coalescing inside
       batching++;
       try { return await fn(); } finally { batching--; if (batching === 0) lastPush = 0; }
     },
-    replace(t) { pushHistory(); current = migrate(t); save(); emit(); },
-    reset() { pushHistory(); current = defaultTrip(); save(); emit(); },
+    replace(t) { pushHistory(true); current = migrate(t); save(); emit(); },
+    reset() { pushHistory(true); current = defaultTrip(); save(); emit(); },
     canUndo() { return undoStack.length > 0; },
+    historyDepth() { return { undo: undoStack.length, redo: redoStack.length }; },
     canRedo() { return redoStack.length > 0; },
     undo() {
       if (!undoStack.length) return false;

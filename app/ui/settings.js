@@ -92,6 +92,14 @@ export function renderSettings(el, trip, db) {
       ${num('Precipitation', s('weatherOverride.precipMm'), S.weatherOverride.precipMm, { step: 0.1, min: 0, unit: 'mm/h' })}
     </div>
 
+    <h2>Filling a leg</h2>
+    <div class="grid2">
+      ${num('Start detour budget', s('fill.startDetourKm'), S.fill.startDetourKm, { min: 1, max: 200, unit: 'km — tried first' })}
+      ${num('Widen up to', s('fill.maxDetourKm'), S.fill.maxDetourKm, { min: 1, max: 400, unit: 'km when nothing fits' })}
+      ${num('Sites per click', s('fill.perRun'), S.fill.perRun, { min: 1, max: 20, unit: '— click again to go deeper' })}
+    </div>
+    <p class="muted" style="margin:2px 0 0">Each click inserts into the longest remaining stretch first (middle, then quarters…), keeping the detour as small as possible.</p>
+
     <h2>Next-stop search</h2>
     <div class="grid2">
       ${num('Candidates shown', s('candidates.limit'), S.candidates.limit, { min: 3, max: 50 })}

@@ -320,3 +320,8 @@ main { display: flex; flex: 1; min-height: 0; }
 /* Provisional straight line while a leg is routing (marching ants), red if the route failed */
 .pending-leg { animation: dashmove 700ms linear infinite; }
 .failed-leg { opacity: .85; }
+
+/* Insert affordance between two stop cards */
+.gap-row { display: flex; align-items: center; justify-content: center; margin: -2px 0 8px; }
+.gap-row .gap-fill { font-size: 11.5px; padding: 3px 10px; border-radius: 999px; color: var(--muted); background: var(--bg-2); border: 1px dashed var(--line); }
+.gap-row .gap-fill:hover { color: #fff; background: var(--red); border-color: var(--red); border-style: solid; }

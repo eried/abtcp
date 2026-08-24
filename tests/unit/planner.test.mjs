@@ -95,30 +95,7 @@ test('candidates: usable only, excludes trip sites and unroutable, sorted by roa
   toward.forEach(c => assert.ok(c.progressKm > 0));
 });
 
-test('autoChain appends stops with ok legs toward the destination and stops near it', async () => {
-  const { store, planner } = setup();
-  store.update(t => { t.destination = { lat: 68.4385, lng: 17.4272, name: 'Narvik' }; });
-  const progress = [];
-  const added = await planner.autoChain({ n: 5, targetSoc: 60, onProgress: (a, n, stop) => progress.push(stop.name) });
-  assert.ok(added >= 2, `added ${added}`);
-  assert.deepEqual(progress, store.trip.stops.map(s => s.name));
-  const { stops, summary } = compute(store.trip);
-  stops.forEach(r => assert.equal(r.leg.status, 'ok'));
-  stops.forEach(r => assert.ok(r.arrivalSoc >= 10));
-  assert.equal(summary.uniqueCounted, added);
-  assert.equal(stops.at(-1).stop.name, 'Narvik');
-  assert.equal(Object.keys(store.trip.legs).length, stops.length, 'pruned legs');
-});
 
-test('autoChain raises the previous target when a hop needs more charge', async () => {
-  const { store, planner } = setup();
-  store.update(t => { t.start.soc = 40; t.destination = { lat: 69.9689, lng: 23.2717, name: 'Alta' }; });
-  const added = await planner.autoChain({ n: 2, targetSoc: 20, toward: true });
-  assert.ok(added >= 1);
-  const { stops } = compute(store.trip);
-  if (stops.length > 1) assert.ok(stops[0].stop.charge.targetSoc > 20, 'target raised adaptively');
-  stops.forEach(r => assert.ok(r.arrivalSoc >= 10, `arrival ${r.arrivalSoc}`));
-});
 
 test('ensureLegs builds only missing legs in order and pruneLegs drops orphans', async () => {
   const { store, planner, log } = setup();
@@ -133,18 +110,6 @@ test('ensureLegs builds only missing legs in order and pruneLegs drops orphans',
   assert.equal(Object.keys(store.trip.legs).length, 0);
 });
 
-test('autoChain with beforeId fills the gap to a too-far stop', async () => {
-  const { store, planner } = setup();
-  store.update(t => { t.start.soc = 30; t.stops.push(newStop({ site: SITES[3], targetSoc: 60 })); });
-  await planner.ensureLegs();
-  const before = compute(store.trip).stops.at(-1);
-  assert.ok(before.arrivalSoc < 10, `precondition unreachable, got ${before.arrivalSoc}`);
-  const added = await planner.autoChain({ n: 6, beforeId: store.trip.stops[0].id });
-  assert.ok(added >= 1, `added ${added}`);
-  const tl = compute(store.trip);
-  assert.equal(tl.stops.at(-1).stop.name, 'Narvik');
-  tl.stops.forEach(r => { assert.equal(r.leg.status, 'ok'); assert.ok(r.arrivalSoc >= 10, `${r.stop.name} at ${r.arrivalSoc}`); });
-});
 
 test('candidates prefer sites not visited this year and ensureLegs builds the destination leg', async () => {
   const { store, planner } = setup();
@@ -164,4 +129,70 @@ test('candidates prefer sites not visited this year and ensureLegs builds the de
   store.update(t => { t.destination = null; });
   planner.pruneLegs();
   assert.equal(Object.keys(store.trip.legs).length, 0);
+});
+
+test('fillLeg inserts near the middle of the leg, not at its start', async () => {
+  const { store, planner } = setup();
+  store.update(t => { t.stops.push(newStop({ site: SITES[3], targetSoc: 60 })); }); // far away: Narvik
+  await planner.ensureLegs();
+  const before = planner.gapKm(store.trip.start, store.trip.stops[0]);
+  const added = await planner.fillLeg({ gapIndex: 0, maxAdds: 1 });
+  assert.equal(added, 1);
+  assert.equal(store.trip.stops.length, 2);
+  const inserted = store.trip.stops[0];
+  assert.equal(store.trip.stops[1].name, 'Narvik', 'the far stop stays last');
+  assert.ok(['Setermoen', 'Finnsnes'].includes(inserted.name), `middle site expected, got ${inserted.name}`);
+  // both halves must be shorter than the original leg — that is what "in the middle" means
+  const first = planner.gapKm(store.trip.start, inserted);
+  const second = planner.gapKm(inserted, store.trip.stops[1]);
+  assert.ok(first < before * 0.85 && second < before * 0.85, `${first} / ${second} vs ${before}`);
+  const { stops } = compute(store.trip);
+  stops.forEach(r => { assert.equal(r.leg.status, 'ok'); assert.ok(r.arrivalSoc >= 10); });
+});
+
+test('each run is bounded and repeated runs split the longest remaining stretch', async () => {
+  const { store, planner } = setup();
+  store.update(t => { t.stops.push(newStop({ site: SITES[3], targetSoc: 60 })); t.settings.fill.perRun = 1; });
+  await planner.ensureLegs();
+  assert.equal(await planner.fillLeg({ gapIndex: 0 }), 1, 'perRun caps a single click');
+  const longestAfterOne = Math.max(planner.gapKm(store.trip.start, store.trip.stops[0]), planner.gapKm(store.trip.stops[0], store.trip.stops[1]));
+  const again = await planner.fillLeg({ gapIndex: 0, maxAdds: 1 });
+  if (again) {
+    const nodes = [store.trip.start, ...store.trip.stops];
+    const longest = Math.max(...nodes.slice(0, -1).map((n, i) => planner.gapKm(n, nodes[i + 1])));
+    assert.ok(longest <= longestAfterOne + 0.01, 'the sparsest stretch got shorter, not the first one');
+  }
+});
+
+test('fillLeg widens the detour budget only when nothing fits, and gives up cleanly', async () => {
+  const { store, planner } = setup();
+  store.update(t => { t.stops.push(newStop({ site: SITES[3], targetSoc: 60 })); });
+  await planner.ensureLegs();
+  store.update(t => { t.settings.fill = { startDetourKm: 0.2, maxDetourKm: 0.4, perRun: 2 }; });
+  assert.equal(await planner.fillLeg({ gapIndex: 0 }), 0, 'nothing fits in a 0.4 km detour');
+  assert.equal(store.trip.stops.length, 1, 'a failed attempt leaves the plan untouched');
+  store.update(t => { t.settings.fill = { startDetourKm: 0.2, maxDetourKm: 80, perRun: 2 }; });
+  assert.ok(await planner.fillLeg({ gapIndex: 0 }) >= 1, 'escalating the budget finds a site');
+});
+
+test('fillLeg honours the charge cap, the reserve and the destination gap', async () => {
+  const { store, planner } = setup();
+  store.update(t => { t.destination = { lat: 68.4385, lng: 17.4272, name: 'Narvik town' }; });
+  await planner.ensureLegs();
+  const added = await planner.fillLeg({ gapIndex: 0, maxAdds: 2 }); // start → destination
+  assert.ok(added >= 1, 'the start → destination leg can be filled');
+  const tl = compute(store.trip);
+  assert.ok(tl.destination && tl.destination.leg.status === 'ok');
+  tl.stops.forEach(r => assert.ok(r.arrivalSoc >= store.trip.settings.reserveSoc, `arrival ${r.arrivalSoc}`));
+  store.trip.stops.forEach(st => assert.ok(!st.charge || st.charge.targetSoc <= store.trip.settings.maxChargeSoc));
+  assert.equal(Object.keys(store.trip.legs).length, store.trip.stops.length + 1, 'legs pruned to the current chain');
+});
+
+test('fillLeg rejects an out-of-range gap index without touching the trip', async () => {
+  const { store, planner } = setup();
+  store.update(t => { t.stops.push(newStop({ site: SITES[0], targetSoc: 60 })); });
+  await planner.ensureLegs();
+  assert.equal(await planner.fillLeg({ gapIndex: 7 }), 0);
+  assert.equal(await planner.fillLeg({}), 0);
+  assert.equal(store.trip.stops.length, 1);
 });
