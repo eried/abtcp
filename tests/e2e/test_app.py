@@ -286,6 +286,19 @@ def test_plan_export_import(page, url, log):
     page.wait_for_function("document.querySelectorAll(\'.stop[data-id]\').length === 3", timeout=20000)
     wait_legs(page)
 
+    # --- repeat visit: pass chips on fanned badges
+    first_site = page.evaluate("window.__abtcp.store.trip.stops[0].siteId")
+    page.evaluate(f"window.__abtcp.map.openSite({first_site})")
+    page.wait_for_selector(".leaflet-popup [data-act='add']", timeout=5000)
+    page.click(".leaflet-popup [data-act='add']")
+    page.wait_for_function("document.querySelectorAll('.stop[data-id]').length === 4", timeout=20000)
+    wait_legs(page)
+    assert page.locator(".stop-icon .pass").count() == 2, "pass chips on both visits of the same site"
+    page.evaluate("window.__abtcp.sidebar.removeStop(window.__abtcp.store.trip.stops[3].id)")
+    page.wait_for_function("document.querySelectorAll('.stop[data-id]').length === 3", timeout=15000)
+    wait_legs(page)
+    assert page.locator(".stop-icon .pass").count() == 0
+
     # --- itinerary calendar view
     page.click("#btn-itinerary")
     page.wait_for_selector(".itin-ev", timeout=5000)
@@ -307,7 +320,9 @@ def test_plan_export_import(page, url, log):
     # --- battery bars on every card (incl. destination) and under the map badges
     assert page.locator(".stop[data-id] .batt").count() == 2
     assert page.locator("#dest-card .batt").count() == 1
-    assert page.locator(".stop-icon .mini-batt").count() >= 2, "mini battery under stop numbers" 
+    assert page.locator(".stop-icon .mini-batt").count() >= 2, "mini battery under stop numbers"
+    assert page.locator(".stop-icon.start .mini-batt").count() == 1, "battery on the start marker"
+    assert page.locator(".stop-icon.dest .mini-batt").count() == 1, "battery on the destination marker" 
 
     # --- map filter: All | Reachable | Iconic (trip sites always visible)
     trip_visible = "window.__abtcp.store.trip.stops.filter(s => s.siteId != null).every(s => window.__abtcp.map.isVisible(s.siteId))"

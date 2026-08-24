@@ -84,34 +84,37 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
     }
   }
 
-  const divIcon = (cls, label) => L.divIcon({ className: `stop-icon ${cls}`, html: `<span class="n">${label}</span>`, iconSize: [24, 24], iconAnchor: [12, 12] });
-
   const pct = x => Math.max(0, Math.min(100, x));
 
-  function stopIcon(cls, label, batt, fanPx) {
+  function stopIcon(cls, label, batt, fanPx, pass = 0) {
     let bar = '';
     if (batt) {
       const lo = pct(Math.min(batt.arr, batt.dep));
       const w = pct(Math.abs(batt.dep - batt.arr));
       bar = `<span class="mini-batt" title="arrive ${Math.round(batt.arr)} % → leave ${Math.round(batt.dep)} %"><i class="${batt.cls || ''}" style="width:${pct(batt.arr)}%"></i><b class="${batt.dep < batt.arr ? 'd' : ''}" style="left:${lo}%;width:${w}%"></b></span>`;
     }
-    return L.divIcon({ className: `stop-icon ${cls}`, html: `<span class="n">${label}</span>${bar}`, iconSize: [30, 34], iconAnchor: [15 - fanPx, 17] });
+    const chip = pass > 0 ? `<span class="pass" title="pass ${pass} at this site">${pass}</span>` : '';
+    return L.divIcon({ className: `stop-icon ${cls}`, html: `<span class="n">${label}</span>${bar}${chip}`, iconSize: [38, 37], iconAnchor: [19 - fanPx, 18] });
   }
 
   function setStops({ start, stops, destination }) {
     stopLayer.clearLayers();
-    if (start) L.marker([start.lat, start.lng], { icon: divIcon('start', 'S'), zIndexOffset: 900 }).bindTooltip(start.name || 'Start').addTo(stopLayer);
+    if (start) L.marker([start.lat, start.lng], { icon: stopIcon('start', 'S', start.batt, 0), zIndexOffset: 900 }).bindTooltip(start.name || 'Start').addTo(stopLayer);
+    const keyOf = s => `${(+s.lat).toFixed(5)},${(+s.lng).toFixed(5)}`;
+    const totals = new Map();
+    for (const s of stops) totals.set(keyOf(s), (totals.get(keyOf(s)) || 0) + 1);
     const seen = new Map();
     stops.forEach((s, i) => {
-      const key = `${(+s.lat).toFixed(5)},${(+s.lng).toFixed(5)}`;
+      const key = keyOf(s);
       const nth = seen.get(key) || 0;
       seen.set(key, nth + 1);
-      const fanPx = [0, 1, -1, 2, -2][Math.min(nth, 4)] * 20; // repeat visits fan out sideways
-      const m = L.marker([s.lat, s.lng], { icon: stopIcon(s.cls || '', String(i + 1), s.batt, fanPx), zIndexOffset: 1000 + i }).bindTooltip(s.tooltip || s.name);
+      const fanPx = [0, 1, -1, 2, -2][Math.min(nth, 4)] * 22; // repeat visits fan out sideways
+      const pass = (totals.get(key) || 1) > 1 ? nth + 1 : 0;
+      const m = L.marker([s.lat, s.lng], { icon: stopIcon(s.cls || '', String(i + 1), s.batt, fanPx, pass), zIndexOffset: 1000 + i }).bindTooltip(s.tooltip || s.name);
       m.on('click', () => emit('stopClick', { siteId: s.siteId ?? null, index: i }));
       m.addTo(stopLayer);
     });
-    if (destination) L.marker([destination.lat, destination.lng], { icon: divIcon('dest', 'D'), zIndexOffset: 950 }).bindTooltip(destination.name || 'Destination').addTo(stopLayer);
+    if (destination) L.marker([destination.lat, destination.lng], { icon: stopIcon('dest', 'D', destination.batt, 0), zIndexOffset: 950 }).bindTooltip(destination.name || 'Destination').addTo(stopLayer);
   }
 
   let lastCands = [];

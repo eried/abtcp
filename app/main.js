@@ -257,9 +257,11 @@ async function main() {
     }
     map.setRoute(legs);
     map.setStops({
-      start: trip.start,
+      start: { ...trip.start, batt: { arr: +trip.start.soc, dep: +trip.start.soc, cls: socClass(+trip.start.soc, trip.settings.reserveSoc) } },
       stops: tl.stops.map(r => ({ lat: r.stop.lat, lng: r.stop.lng, siteId: r.stop.siteId ?? null, name: r.stop.name, cls: r.stop.kind === 'point' ? 'point' : (r.session && r.session.broken) ? 'broken' : '', batt: { arr: r.arrivalSoc, dep: r.departSoc, cls: socClass(r.arrivalSoc, trip.settings.reserveSoc) }, tooltip: `${r.i + 1}. ${r.stop.name} · arrive ${fmt.clock(r.arrival)} at ${fmt.pct(r.arrivalSoc)} → leave at ${fmt.pct(r.departSoc)}` })),
-      destination: trip.destination,
+      destination: trip.destination
+        ? { ...trip.destination, batt: tl.destination && tl.destination.leg.status === 'ok' ? { arr: tl.destination.arrivalSoc, dep: tl.destination.arrivalSoc, cls: socClass(tl.destination.arrivalSoc, trip.settings.reserveSoc) } : null }
+        : null,
     });
     if (showItin) renderItinerary(itinEl, tl, trip);
     const lastStop = trip.stops[trip.stops.length - 1];
