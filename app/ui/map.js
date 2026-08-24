@@ -146,11 +146,16 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
     }
   }
 
+  function isVisible(id) {
+    const e = markers.get(Number(id));
+    return !!(e && e.marker._map);
+  }
+
   function visibleCount() {
     let n = 0;
     for (const e of markers.values()) if (e.marker._map) n++;
     return n;
   }
 
-  return { map, setTiles, setSites, restyle, setRoute, setStops, setCandidates, fitTo, openSite, panToShow, applyFilter, visibleCount, on, closePopup: () => map.closePopup(), size: () => markers.size };
+  return { map, setTiles, setSites, restyle, setRoute, setStops, setCandidates, fitTo, openSite, panToShow, applyFilter, visibleCount, isVisible, on, closePopup: () => map.closePopup(), size: () => markers.size };
 }
