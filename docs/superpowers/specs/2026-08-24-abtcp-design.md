@@ -120,6 +120,8 @@ Per driving chunk:
   positive, `Em · ηregen` if negative (regen).
 - Auxiliary `Paux = 0.35 kW + 0.09·max(0, 20−T) + 0.08·max(0, T−24)` kW · time (heat pump).
 - Cold-battery factor on drive energy: ×1.08 below 0 °C, ×1.04 below 8 °C.
+- Dynamics term on positive drive energy: ×(1.02 + 0.10·clamp((105 − v)/45, 0, 1)) — real-world
+  accelerating/braking/curves, calibrated against Tesla-app predictions on 80–90 km/h roads.
 - Global margin `×(1 + margin%)` (default +5 %: the in-car estimate is optimistic).
 
 Ferry chunk: 0 drive energy; crossing time = 8 min docking + km / 22 km/h (OSRM's ferry
@@ -129,8 +131,8 @@ Moskenes–Bodø), so peninsulas can be road dead ends.
 
 Car preset — Model Y 2025 Long Range AWD (Juniper, EU): usable 75 kWh, mass 1997 kg
 (+ 120 kg payload), Cd 0.22, A 2.5 m², Crr 0.011, ηdrive 0.90, ηregen 0.62, max DC 250 kW.
-Wh/km sanity targets at 20 °C flat: ~145 at 90 km/h, ~190 at 120 km/h; ~230 at 120 km/h
-and 0 °C. Unit tests assert these ranges.
+Wh/km sanity targets at 20 °C flat: ~155 at 90 km/h, ~205 at 120 km/h; ~250 at 120 km/h
+and 0 °C — a few % above the Tesla app's own predictions. Unit tests assert these ranges.
 
 Leg output: `{ km, driveH, ferryH, ferries, gainM, lossM, kwh, whKm, temp, wind,
 weatherSrc, geometry (simplified [lat,lng] list), computedAt }`.

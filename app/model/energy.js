@@ -13,9 +13,9 @@ export function airDensity(tempC) {
   return 101325 / (287.05 * (tempC + 273.15));
 }
 
-/** Cabin + electronics load (heat pump). kW. */
+/** Cabin + electronics load (heat pump, screens, pumps). kW. */
 export function auxPowerKw(tempC) {
-  return 0.35 + 0.09 * Math.max(0, 20 - tempC) + 0.08 * Math.max(0, tempC - 24);
+  return 0.45 + 0.10 * Math.max(0, 20 - tempC) + 0.08 * Math.max(0, tempC - 24);
 }
 
 /** Cold-battery penalty on drive energy. */
@@ -32,6 +32,16 @@ export function drivingSpeedMs(vOsrmMs, profile) {
 }
 
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+
+/**
+ * Real-world driving dynamics (accelerating, braking, curves, villages) cost energy that a
+ * steady-state model misses — most on slow roads, almost nothing at steady highway speeds.
+ * Calibrated against the Tesla app's own predictions on 80–90 km/h Nordic roads (which land
+ * ~12–15 % above pure steady-state physics) while leaving ~120 km/h motorway cruise intact.
+ */
+export function dynamicsFactor(vKmh) {
+  return 1 + 0.02 + 0.10 * clamp((105 - vKmh) / 45, 0, 1);
+}
 
 export function chunkEnergy(chunk, wx, car, profile, settings = {}) {
   const massKg = car.massKg + (car.payloadKg ?? 0);
@@ -53,7 +63,7 @@ export function chunkEnergy(chunk, wx, car, profile, settings = {}) {
   const grade = chunk.d > 0 ? clamp(((chunk.elev1 ?? chunk.elev0 ?? 0) - (chunk.elev0 ?? 0)) / chunk.d, -0.12, 0.12) : 0;
   const fGrade = massKg * G * grade;
   const eMech = (fAero + fRoll + fGrade) * chunk.d; // J
-  let eBatt = eMech >= 0 ? eMech / car.etaDrive : eMech * car.etaRegen;
+  let eBatt = eMech >= 0 ? eMech * dynamicsFactor(v * 3.6) / car.etaDrive : eMech * car.etaRegen;
   eBatt *= coldFactor(wx.tempC);
   const eAux = auxPowerKw(wx.tempC) * 1000 * seconds; // J
   let kwh = (eBatt + eAux) / 3.6e6;

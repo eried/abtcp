@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { legEnergy, chunkEnergy, airDensity, auxPowerKw, drivingSpeedMs, quickWhKm } from '../../app/model/energy.js';
+import { legEnergy, chunkEnergy, airDensity, auxPowerKw, drivingSpeedMs, dynamicsFactor, quickWhKm } from '../../app/model/energy.js';
 import { CARS } from '../../app/model/cars.js';
 import { PROFILES, profileById } from '../../app/model/profiles.js';
 
@@ -14,26 +14,33 @@ const wx = (tempC, windKmh = 0, windFromDeg = 0, precipMm = 0) => ({ tempC, wind
 test('air density and aux power basics', () => {
   assert.ok(Math.abs(airDensity(20) - 1.204) < 0.005);
   assert.ok(airDensity(-10) > airDensity(20));
-  assert.ok(Math.abs(auxPowerKw(20) - 0.35) < 1e-9);
+  assert.ok(Math.abs(auxPowerKw(20) - 0.45) < 1e-9);
   assert.ok(auxPowerKw(0) > 2 && auxPowerKw(0) < 2.5);
   assert.ok(auxPowerKw(32) > auxPowerKw(20));
 });
 
-test('120 km/h at 20°C ≈ 180–200 Wh/km', () => {
+test('120 km/h at 20°C ≈ 190–215 Wh/km', () => {
   const r = legEnergy(flat(120), wx(20), CAR, LIMIT, S);
-  assert.ok(r.whKm > 180 && r.whKm < 200, `got ${r.whKm}`);
+  assert.ok(r.whKm > 190 && r.whKm < 215, `got ${r.whKm}`);
   assert.ok(Math.abs(r.driveH - 10 / 120) < 1e-6);
   assert.equal(r.km, 10);
 });
 
-test('90 km/h at 20°C ≈ 130–150 Wh/km', () => {
+test('90 km/h at 20°C ≈ 145–165 Wh/km (calibrated vs the Tesla app on slow roads)', () => {
   const r = legEnergy(flat(90), wx(20), CAR, LIMIT, S);
-  assert.ok(r.whKm > 130 && r.whKm < 150, `got ${r.whKm}`);
+  assert.ok(r.whKm > 145 && r.whKm < 165, `got ${r.whKm}`);
 });
 
-test('120 km/h at 0°C ≈ 215–245 Wh/km', () => {
+test('dynamics factor: big on slow roads, small at steady highway speed', () => {
+  assert.ok(Math.abs(dynamicsFactor(60) - 1.12) < 1e-9);
+  assert.ok(Math.abs(dynamicsFactor(105) - 1.02) < 1e-9);
+  assert.ok(Math.abs(dynamicsFactor(130) - 1.02) < 1e-9);
+  assert.ok(dynamicsFactor(70) > dynamicsFactor(90));
+});
+
+test('120 km/h at 0°C ≈ 235–265 Wh/km', () => {
   const r = legEnergy(flat(120), wx(0), CAR, LIMIT, S);
-  assert.ok(r.whKm > 215 && r.whKm < 245, `got ${r.whKm}`);
+  assert.ok(r.whKm > 235 && r.whKm < 265, `got ${r.whKm}`);
 });
 
 test('headwind increases consumption, tailwind decreases it', () => {

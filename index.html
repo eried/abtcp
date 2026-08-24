@@ -66,7 +66,7 @@
         <h2>Model notes</h2>
         <ul>
           <li>Consumption: aerodynamic + rolling + climbing physics with regen, heat-pump HVAC by temperature, wind along the route direction, wet-road factor, a cold-battery factor and a configurable safety margin (the in-car estimate is usually optimistic).</li>
-          <li>This is the same kind of physics the car's own trip planner runs; ABTCP is deliberately a touch more conservative (+5 % margin by default) because the in-car prediction tends to land optimistic. Compare a few real legs and tune the margin, rolling resistance and payload in Settings until it matches your car.</li>
+          <li>This is the same kind of physics the car's own trip planner runs, plus a driving-dynamics term (accelerations, curves, villages) that steady-state models miss. It is calibrated to land a few percent <em>above</em> the Tesla app's prediction — which itself tends to arrive ~2 % optimistic — so the plan errs on the safe side. Compare a few real legs and tune the margin, rolling resistance and payload in Settings until it matches your car.</li>
           <li>Speeds come from OpenStreetMap limits via OSRM plus your driving profile (e.g. +5 km/h on roads ≥ 60 km/h).</li>
           <li>Charging: the Model Y LR curve capped by the site power (V2 = 150 kW), 0.5 % integration steps, plug-in overhead, 6 % charging losses for the kWh counter.</li>
           <li>Parked drain: Sentry ≈ 0.2 %/h (≈ 5 %/day on 2024.38+ firmware), off ≈ 0.04 %/h, ×1.3 below 0 °C.</li>
