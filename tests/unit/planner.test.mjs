@@ -196,3 +196,43 @@ test('fillLeg rejects an out-of-range gap index without touching the trip', asyn
   assert.equal(await planner.fillLeg({}), 0);
   assert.equal(store.trip.stops.length, 1);
 });
+
+test('a leg beyond one charge is filled at the furthest REACHABLE point, not at the midpoint', async () => {
+  const { store, planner } = setup();
+  // Alta is ~350 km of (fake) road away; a small pack makes the midpoint unreachable
+  store.update(t => {
+    t.stops.push(newStop({ site: SITES[4], targetSoc: 60 }));
+    t.car.usableKwh = 20;
+    t.start.soc = 100;
+    t.settings.fill = { startDetourKm: 40, maxDetourKm: 120, perRun: 1 };
+  });
+  await planner.ensureLegs();
+  const before = compute(store.trip);
+  const gap = planner.gapKm(store.trip.start, store.trip.stops[0]);
+  assert.ok(before.stops[0].arrivalSoc < store.trip.settings.reserveSoc, 'precondition: Alta is out of reach');
+  const added = await planner.fillLeg({ gapIndex: 0 });
+  assert.ok(added >= 1, 'something was inserted');
+  const after = compute(store.trip);
+  const first = after.stops[0];
+  assert.equal(first.stop.name, 'Skibotn', 'the reachable site near the start is used, not a midpoint site');
+  assert.ok(planner.gapKm(store.trip.start, first.stop) < gap / 2, 'inserted well before the midpoint');
+  assert.ok(first.arrivalSoc >= store.trip.settings.reserveSoc, `the first hop is now drivable (${first.arrivalSoc})`);
+  assert.equal(after.stops.at(-1).stop.name, 'Alta', 'the chosen far stop is still last');
+});
+
+test('corridor search finds on-route sites and ranks by detour then proximity to the target', async () => {
+  const { store, planner } = setup();
+  store.update(t => { t.stops.push(newStop({ site: SITES[3], targetSoc: 60 })); });
+  await planner.ensureLegs();
+  const a = store.trip.start;
+  const b = store.trip.stops[0];
+  const samples = planner.routeSamples(a, b);
+  assert.ok(samples.length >= 2 && samples[0].km === 0, 'samples start at the leg origin');
+  assert.ok(samples.at(-1).km > 100, 'samples span the leg');
+  const cands = await planner.corridorCandidates(a, b, { targetKm: planner.gapKm(a, b) / 2, corridorKm: 60, maxReachKm: 1e6 });
+  assert.ok(cands.length >= 1);
+  cands.forEach(c => { assert.ok(c.detourKm <= 60); assert.ok(Number.isFinite(c.fromAKm)); });
+  for (let i = 1; i < cands.length; i++) assert.ok(cands[i - 1].score <= cands[i].score, 'ranked by score');
+  const unreachable = await planner.corridorCandidates(a, b, { targetKm: planner.gapKm(a, b) / 2, corridorKm: 60, maxReachKm: 1 });
+  assert.equal(unreachable.length, 0, 'sites beyond the remaining range are dropped');
+});
