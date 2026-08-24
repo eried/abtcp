@@ -268,6 +268,13 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     buildMissing().then(() => refreshCandidates(true));
   }
 
+  /** Replace the armed stop with `site`; false when replace mode is not armed. */
+  function replaceWith(site) {
+    if (!replaceId || !site) return false;
+    performReplace(site);
+    return true;
+  }
+
   async function addStop(site, { targetSoc = null } = {}) {
     if (!site) return;
     if (replaceId) { performReplace(site); return; }
@@ -491,5 +498,5 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     toast.success(mode === 'start' ? 'Start set' : 'Destination set');
   });
 
-  return { render, refreshCandidates, addStop, addPoint, setStart, setDestination, removeStop, buildMissing, tripPoints, get candidates() { return cands; } };
+  return { render, refreshCandidates, addStop, addPoint, setStart, setDestination, removeStop, buildMissing, tripPoints, replaceWith, get replacingId() { return replaceId; }, get candidates() { return cands; } };
 }

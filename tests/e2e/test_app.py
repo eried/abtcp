@@ -359,6 +359,18 @@ def test_plan_export_import(page, url, log):
     assert page.evaluate("window.__abtcp.store.trip.stops[0].rest.sentry") is True
     assert page.locator(".stop[data-id]").count() == 2
 
+    # --- replace by clicking a charger dot directly on the map
+    page.click('.stop[data-index="0"] [data-act="swap"]')
+    t3 = page.evaluate("""() => { const a = window.__abtcp; const s = a.db.search('Alta', 3).find(x => a.db.isUsable(x) && x.country === 'Norway');
+      a.map.map.setView([s.lat, s.lng], 9, { animate: false });
+      const r = document.getElementById('map').getBoundingClientRect();
+      const p = a.map.map.latLngToContainerPoint([s.lat, s.lng]);
+      return { x: r.left + p.x, y: r.top + p.y, id: s.id }; }""")
+    page.mouse.click(t3["x"], t3["y"])
+    page.wait_for_function(f"window.__abtcp.store.trip.stops[0].siteId === {t3['id']}", timeout=15000)
+    wait_legs(page)
+    assert page.evaluate("window.__abtcp.store.trip.stops[0].rest.hours") == 2, "rest preserved on map-click replace"
+
     assert not errors, errors
     page.screenshot(path=str(OUT / "final.png"))
 

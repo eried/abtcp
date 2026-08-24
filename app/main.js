@@ -103,13 +103,14 @@ async function main() {
     const t = store.trip;
     const inStops = t.stops.map((s, i) => ({ s, i })).filter(x => x.s.siteId === site.id);
     const isIn = inStops.length > 0;
+    const rIdx = sidebar.replacingId ? t.stops.findIndex(x => x.id === sidebar.replacingId) : -1;
     const visited = (t.visitedBefore || []).includes(site.id);
     return `<div class="popup"><b>${site.iconic ? '🏅 ' : ''}${esc(site.name)}</b>
       <div class="meta">${esc(STATUS_LABEL[site.status] || site.status)} · ${site.stalls} stalls · ${site.kw || '?'} kW${site.gen ? ` · ${site.gen.toUpperCase()}` : ''}${site.opened ? ` · opened ${esc(site.opened)}` : ''}</div>
       ${site.iconic ? `<div class="meta">🏅 Iconic charger badge: ${esc(site.iconic)}</div>` : ''}
       ${site.tid ? `<a href="https://www.tesla.com/findus/location/supercharger/${encodeURIComponent(site.tid)}" target="_blank" rel="noopener">tesla.com ↗</a>` : ''}
       <div class="popup-actions">
-        <button data-act="add" data-site="${site.id}" class="primary">${isIn ? 'Add again (repeat, for charge only)' : 'Add as next stop'}</button>
+        <button data-act="add" data-site="${site.id}" class="primary">${rIdx >= 0 ? `⇄ Replace stop #${rIdx + 1} with this site` : isIn ? 'Add again (repeat, for charge only)' : 'Add as next stop'}</button>
         ${inStops.map(x => `<button data-act="removeStop" data-site="${site.id}" data-stop="${esc(x.s.id)}">Remove stop #${x.i + 1}</button>`).join('')}
         <button data-act="visited" data-site="${site.id}" title="Affects the yearly unique-sites counter and suggestion order">${visited ? 'Unmark visited this year' : 'Visited earlier this year'}</button>
       </div></div>`;
@@ -122,6 +123,7 @@ async function main() {
   loadSites();
 
   map.on('stopClick', ({ siteId }) => { if (siteId != null) map.openSite(siteId); });
+  map.on('siteClick', ({ site }) => { if (sidebar.replacingId) sidebar.replaceWith(site); });
   map.on('siteAction', ({ act, siteId, stopId }) => {
     const site = db.byId(siteId);
     if (!site) return;
