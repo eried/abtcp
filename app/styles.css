@@ -246,13 +246,15 @@ main { display: flex; flex: 1; min-height: 0; }
 .iconic-table th { color: var(--muted); font-weight: 600; }
 
 /* Settings / Help dialog */
-.dialog { width: min(760px, 94vw); max-height: 86vh; padding: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--bg-2); color: var(--text); box-shadow: 0 24px 70px rgba(0,0,0,.6); }
+.dialog { width: min(760px, 94vw); max-height: 86vh; padding: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--bg-2); color: var(--text); box-shadow: 0 24px 70px rgba(0,0,0,.6); overflow: hidden; }
+/* the UA stylesheet gives <dialog> overflow:auto — without this it scrolls too (two bars) */
+.dialog[open] { display: flex; flex-direction: column; }
 .dialog::backdrop { background: rgba(3,6,10,.62); }
-.dialog-head { display: flex; align-items: center; gap: 4px; padding: 8px 10px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg-2); z-index: 2; }
+.dialog-head { display: flex; align-items: center; gap: 4px; padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--bg-2); flex: none; }
 .dialog-head .spacer { flex: 1; }
 .dtab { background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 12px; color: var(--muted); }
 .dtab.active { color: var(--text); border-bottom-color: var(--red); }
-.dialog-body { overflow-y: auto; max-height: calc(86vh - 46px); }
+.dialog-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .dialog-body .panel { padding: 12px 16px 24px; overflow: visible; flex: none; min-height: 0; }
 .dialog-body .panel[hidden] { display: none; }
 #btn-settings, #btn-file { min-width: 36px; font-size: 15px; line-height: 1; }

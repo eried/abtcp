@@ -265,6 +265,13 @@ def test_plan_export_import(page, url, log):
     assert page.text_content("#counter-streak") == streak_text
     open_settings(page)
     assert page.input_value('[data-setting="rules.windowH"]') == "48"
+    # exactly one scrollbar in the dialog (the <dialog> element itself must not scroll too)
+    scroll_probe = "(() => [document.documentElement, document.body, document.getElementById('dialog'), ...document.querySelectorAll('#dialog *')].filter(e => e && e.scrollHeight > e.clientHeight + 2 && ['auto','scroll'].includes(getComputedStyle(e).overflowY)).map(e => e.id || e.className || e.tagName))()"
+    assert page.evaluate(scroll_probe) == ["dialog-body"], page.evaluate(scroll_probe)
+    page.click("#dtab-help")
+    page.wait_for_selector("#panel-help:visible", timeout=5000)
+    assert page.evaluate(scroll_probe) == ["dialog-body"], page.evaluate(scroll_probe)
+    page.click("#dtab-settings")
     close_dialog(page)
 
     # --- garbage import is rejected with a toast, state untouched
