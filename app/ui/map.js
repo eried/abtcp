@@ -69,7 +69,7 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
 
   function hideActions(delay = 260) {
     clearTimeout(hoverTimer);
-    hoverTimer = setTimeout(() => { actionsEl.hidden = true; actionsEl.dataset.kind = ''; }, delay);
+    hoverTimer = setTimeout(() => { actionsEl.hidden = true; actionsEl.dataset.kind = ''; actionsEl.dataset.leg = ''; }, delay);
   }
 
   actionsEl.addEventListener('mouseenter', () => clearTimeout(hoverTimer));
@@ -128,8 +128,17 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
         if (d < 12 && (!best || d < best.d)) best = { d, index: L.index };
       }
     }
-    if (best) showActions({ x: p.x, y: p.y }, [{ act: 'fill', label: '⊕ Fill this leg', title: 'Insert more Superchargers into this leg (detour and charge limits apply)' }], { legIndex: best.index }, 'leg');
-    else if (actionsEl.dataset.kind === 'leg') hideActions(150);
+    if (best) {
+      // Anchor the bar where it first appears: repositioning on every move makes it flee the pointer.
+      if (actionsEl.hidden || actionsEl.dataset.kind !== 'leg' || actionsEl.dataset.leg !== String(best.index)) {
+        showActions({ x: p.x, y: p.y }, [{ act: 'fill', label: '⊕ Fill this leg', title: 'Insert more Superchargers into this leg (detour and charge limits apply)' }], { legIndex: best.index }, 'leg');
+        actionsEl.dataset.leg = String(best.index);
+      } else {
+        clearTimeout(hoverTimer); // same leg: keep it where it is
+      }
+    } else if (actionsEl.dataset.kind === 'leg') {
+      hideActions(600); // time to travel from the trace up to the buttons
+    }
   });
 
   function setSites(sites, classify, popupFn) {

@@ -390,6 +390,12 @@ def test_plan_export_import(page, url, log):
     except Exception:
         state = page.evaluate("(() => { const el = document.getElementById('map-actions'); return { hidden: el.hidden, kind: el.dataset.kind, html: el.innerHTML.slice(0, 90) }; })()")
         raise AssertionError(f"leg hover did not offer Fill: {state}")
+    # the bar must stay put while the pointer slides along the same leg, or it can never be clicked
+    pos = page.evaluate("(() => { const el = document.getElementById('map-actions'); return [el.style.left, el.style.top]; })()")
+    page.mouse.move(mid["x"] + 6, mid["y"] + 2)
+    page.wait_for_timeout(150)
+    assert page.evaluate("(() => { const el = document.getElementById('map-actions'); return [el.style.left, el.style.top]; })()") == pos, "the leg action bar follows the pointer"
+    assert page.locator("#map-actions button[data-act='fill']").is_visible()
     page.mouse.move(mid["x"], mid["y"] - 200)
 
     # --- hovering a suggestion highlights that charger on the map
