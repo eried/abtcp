@@ -119,8 +119,17 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
     const near = db.nearest(origin.lat, origin.lng, { n, maxM, filter: s => db.isUsable(s) && !inTrip.has(s.id) && s.id !== origin.siteId });
     const toDest = p => dest ? haversineM(p.lat, p.lng, dest.lat, dest.lng) : null;
     const originToDest = toDest(origin);
-    let list = near.map(({ site, distM }) => ({ site, distM, progressKm: dest ? (originToDest - toDest(site)) / 1000 : null }));
-    if (useToward) list = list.filter(c => c.progressKm > 0);
+    let list = near.map(({ site, distM }) => ({ site, distM, progressKm: dest ? (originToDest - toDest(site)) / 1000 : null, progressSrc: dest ? 'line' : null }));
+    if (dest && list.length) {
+      // Progress by road: one table call from the destination to origin + candidates (peninsulas and
+      // fjords look close on a straight line but are dead ends by road).
+      try {
+        const td = await osrm.table(dest, [origin, ...list.map(c => c.site)]);
+        const o = td.distances[0];
+        if (o != null) list = list.map((c, i) => (td.distances[i + 1] == null ? c : { ...c, progressKm: (o - td.distances[i + 1]) / 1000, progressSrc: 'road' }));
+      } catch { /* keep straight-line progress */ }
+    }
+    if (useToward) list = list.filter(c => c.progressKm > 5);
     if (!list.length) return [];
     const whKm = averageWhKm(tl, trip);
     const table = await osrm.table(origin, list.map(c => c.site));
@@ -154,7 +163,8 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
       const last = tl0.stops[tl0.stops.length - 1];
       const origin = last ? last.stop : trip.start;
       if (dest && haversineM(origin.lat, origin.lng, dest.lat, dest.lng) < 30000) break;
-      const cands = await candidates({ toward, limit: 6 });
+      let cands = await candidates({ toward, limit: 6 });
+      if (!cands.length && (toward ?? S.candidates.toward) && dest) cands = await candidates({ toward: false, limit: 6 }); // dead end: allow any new site
       let placed = false;
       for (const c of cands.slice(0, 4)) {
         if (c.arrivalSoc < S.reserveSoc - 15) continue;

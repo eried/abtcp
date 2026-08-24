@@ -25,16 +25,20 @@ export function createQueue({ maxConcurrent = 4, spacingMs = 120 } = {}) {
  * HTTP statuses whose JSON body should be returned instead of thrown (OSRM answers 400 with
  * {code:'NoRoute'}).
  */
-export async function getJson(url, { fetchImpl = globalThis.fetch, retries = 1, timeoutMs = 30000, okStatuses = [] } = {}) {
+export async function getJson(url, { fetchImpl = globalThis.fetch, retries = 1, timeoutMs = 30000, okStatuses = [], method = 'GET', body = null, headers = null } = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
     try {
-      const r = await fetchImpl(url, ctrl ? { signal: ctrl.signal } : undefined);
+      const init = { method };
+      if (body != null) init.body = body;
+      if (headers) init.headers = headers;
+      if (ctrl) init.signal = ctrl.signal;
+      const r = await fetchImpl(url, init);
       if (r.ok || okStatuses.includes(r.status)) return await r.json();
-      const body = await r.text().catch(() => '');
-      const err = new Error(`HTTP ${r.status} from ${new URL(url).host}${body ? ': ' + body.slice(0, 120) : ''}`);
+      const text = await r.text().catch(() => '');
+      const err = new Error(`HTTP ${r.status} from ${new URL(url).host}${text ? ': ' + text.slice(0, 120) : ''}`);
       err.status = r.status;
       if (r.status >= 400 && r.status < 500 && r.status !== 429) { err.noRetry = true; }
       throw err;

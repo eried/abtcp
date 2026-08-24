@@ -63,7 +63,7 @@ app/model/profiles.js      driving-style presets
 app/model/geo.js           haversine, bearing, polyline sampling, chunking
 app/services/osrm.js       route + table (throttled queue, configurable base URL)
 app/services/weather.js    Open-Meteo forecast / archive, manual override
-app/services/elevation.js  Open-Meteo elevation, batched (100 pts) + cache
+app/services/elevation.js  Valhalla /height (300 pts, primary) with Open-Meteo fallback + cache
 app/services/geocode.js    Photon (komoot) with Nominatim fallback
 app/ui/map.js              Leaflet map, canvas charger layer, route lines, popups
 app/ui/sidebar.js          start block, stop cards, candidates panel, settings, toasts
@@ -116,11 +116,13 @@ Per driving chunk:
 - Cold-battery factor on drive energy: ×1.08 below 0 °C, ×1.04 below 8 °C.
 - Global margin `×(1 + margin%)` (default +5 %: the in-car estimate is optimistic).
 
-Ferry chunk: 0 drive energy; time = OSRM ferry duration + configurable wait (30 min per
-ferry); sentry-off parked drain applies for the crossing.
+Ferry chunk: 0 drive energy; crossing time = 8 min docking + km / 22 km/h (OSRM's ferry
+durations are ~2× too slow) + configurable wait (30 min per crossing); sentry-off parked drain
+applies for the crossing. OSRM's demo profile does not use some long car ferries (e.g.
+Moskenes–Bodø), so peninsulas can be road dead ends.
 
 Car preset — Model Y 2025 Long Range AWD (Juniper, EU): usable 75 kWh, mass 1997 kg
-(+ 120 kg payload), Cd 0.22, A 2.5 m², Crr 0.010, ηdrive 0.90, ηregen 0.62, max DC 250 kW.
+(+ 120 kg payload), Cd 0.22, A 2.5 m², Crr 0.011, ηdrive 0.90, ηregen 0.62, max DC 250 kW.
 Wh/km sanity targets at 20 °C flat: ~145 at 90 km/h, ~190 at 120 km/h; ~230 at 120 km/h
 and 0 °C. Unit tests assert these ranges.
 
@@ -183,13 +185,17 @@ since the last session" display.
   16 days, else archive for the same date one year earlier, else override) → energy
   model → LegResult stored in `trip.legs`.
 - `candidates(fromLatLng, opts)`: haversine pre-filter of unvisited open sites (nearest
-  60, optional "toward destination" filter: candidate must reduce distance-to-destination)
-  → one OSRM `table` call (null = unroutable, dropped) → road km + h → quick SoC estimate
+  60) → when a destination is set, one OSRM `table` call from the destination gives the
+  *road* distance-to-destination of the origin and every candidate (progress = road km
+  gained; straight-line fallback), "toward" keeps candidates with > 5 km progress
+  → one OSRM `table` call from the origin (null = unroutable, dropped) → road km + h → quick SoC estimate
   (average Wh/km of the trip so far, else the car's profile value at the chosen
   temperature) → sorted by road km.
 - `autoChain(n)`: repeatedly add the nearest candidate that is toward the destination and
-  reachable above reserve with the default charge target; stops when `n` reached, the
-  destination is within one hop, or nothing is reachable.
+  reachable above reserve with the default charge target, raising the previous stop's
+  target when the hop needs more (adaptive); if nothing is reachable toward the
+  destination it retries without the filter; stops when `n` reached, the destination is
+  within 30 km, or nothing is reachable.
 - Request throttling: max 4 concurrent OSRM calls, ≥ 120 ms spacing; one retry.
 
 ## 10. UI (`index.html`, `app/ui/*`)

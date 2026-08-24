@@ -36,7 +36,7 @@ Python 3.12 (`tools/`, Playwright e2e); Node 22 (`node --test`).
 **Interfaces:**
 - Produces: `npm test` → `node --test tests/unit`; `python tests/e2e/test_app.py` (Task 11).
 
-- [ ] **Step 1: package.json + .gitignore**
+- [x] **Step 1: package.json + .gitignore**
 
 ```json
 { "name": "abtcp", "private": true, "type": "module",
@@ -44,9 +44,9 @@ Python 3.12 (`tools/`, Playwright e2e); Node 22 (`node --test`).
 ```
 `.gitignore`: `node_modules/`, `__pycache__/`, `*.pyc`, `tests/e2e/output/`, `.playwright/`
 
-- [ ] **Step 2: Vendor Leaflet 1.9.4** from unpkg: `dist/leaflet.js`, `dist/leaflet.css`, `dist/images/{marker-icon.png,marker-icon-2x.png,marker-shadow.png,layers.png,layers-2x.png}`.
+- [x] **Step 2: Vendor Leaflet 1.9.4** from unpkg: `dist/leaflet.js`, `dist/leaflet.css`, `dist/images/{marker-icon.png,marker-icon-2x.png,marker-shadow.png,layers.png,layers-2x.png}`.
 
-- [ ] **Step 3: smoke test** `tests/unit/smoke.test.mjs`:
+- [x] **Step 3: smoke test** `tests/unit/smoke.test.mjs`:
 ```js
 import test from 'node:test'; import assert from 'node:assert/strict';
 test('runner works', () => assert.equal(1 + 1, 2));
@@ -65,10 +65,10 @@ Run `npm test` → PASS. Commit `chore: scaffold repo, vendor leaflet`.
   `Site = { id:number, tid:string|null, name, status:'OPEN'|'EXPANDING'|'CLOSED_TEMP'|'CLOSED_PERM'|'CONSTRUCTION'|'PERMIT'|'PLAN'|'VOTING', lat, lng, country, region, stalls:number, kw:number, opened:string|null, elev:number|null, plugs:string[] }`
 - Produces: `class ChargerDB { sites; byId(id); nearest(lat, lng, {n=60, filter=(s)=>true}) → [{site, distM}]; isUsable(site) }`, `export async function loadChargers(url)`.
 
-- [ ] **Step 1:** `tools/fetch_chargers.py` downloads `https://supercharge.info/service/supercharge/allSites`, maps fields (`locationId→tid`, `gps.latitude→lat`, `powerKilowatt→kw`, `stallCount→stalls`, `address.country/region`, `elevationMeters→elev`, plug keys with count>0), sorts by id, writes compact JSON (`separators=(',',':')`, `ensure_ascii=False`) and prints per-region counts. `--input` flag lets it read a cached download.
-- [ ] **Step 2:** run it → `data/chargers.json` (~1.5 MB, ~10.9k sites).
-- [ ] **Step 3:** test `tests/unit/chargers.test.mjs`: loads the file with `fs`, asserts count > 8000, every site has numeric lat/lng and a status; `new ChargerDB(data).nearest(69.65, 18.95, {n:3, filter: s => s.status==='OPEN'})` returns Skibotn/Finnsnes within 140 km.
-- [ ] **Step 4:** implement `app/chargers.js` (brute-force haversine via `geo.js` from Task 3 — order Task 3 first or inline the haversine). Run tests, commit `feat: charger database tool and loader`.
+- [x] **Step 1:** `tools/fetch_chargers.py` downloads `https://supercharge.info/service/supercharge/allSites`, maps fields (`locationId→tid`, `gps.latitude→lat`, `powerKilowatt→kw`, `stallCount→stalls`, `address.country/region`, `elevationMeters→elev`, plug keys with count>0), sorts by id, writes compact JSON (`separators=(',',':')`, `ensure_ascii=False`) and prints per-region counts. `--input` flag lets it read a cached download.
+- [x] **Step 2:** run it → `data/chargers.json` (~1.5 MB, ~10.9k sites).
+- [x] **Step 3:** test `tests/unit/chargers.test.mjs`: loads the file with `fs`, asserts count > 8000, every site has numeric lat/lng and a status; `new ChargerDB(data).nearest(69.65, 18.95, {n:3, filter: s => s.status==='OPEN'})` returns Skibotn/Finnsnes within 140 km.
+- [x] **Step 4:** implement `app/chargers.js` (brute-force haversine via `geo.js` from Task 3 — order Task 3 first or inline the haversine). Run tests, commit `feat: charger database tool and loader`.
 
 ---
 
@@ -89,7 +89,7 @@ export function packChunk(c)   // → [d, t, v, mode, brg, lat0, lng0, elev0]
 export function unpackChunk(a, next) // inverse, elev1 from next chunk / last point
 ```
 
-- [ ] **Step 1: tests**
+- [x] **Step 1: tests**
 ```js
 test('haversine Tromsø→Skibotn ≈ 59 km', () => { const m = haversineM(69.6496,18.9553,69.3924,20.2684); assert.ok(m > 57000 && m < 61000); });
 test('bearing north is 0, east is 90', () => { assert.ok(Math.abs(bearingDeg(0,0,1,0)) < 0.01); assert.ok(Math.abs(bearingDeg(0,0,0,1) - 90) < 0.01); });
@@ -102,7 +102,7 @@ test('chunkRoute merges short segments to ≥ minLen and preserves total distanc
 });
 test('ferry interval marks chunks as mode 1 and never merges across the boundary', ...)
 ```
-- [ ] **Step 2:** implement; note the ferry rule: a chunk never mixes modes — close the current chunk when the cumulative distance enters/leaves a ferry interval. Run tests, commit `feat: geo helpers and route chunking`.
+- [x] **Step 2:** implement; note the ferry rule: a chunk never mixes modes — close the current chunk when the cumulative distance enters/leaves a ferry interval. Run tests, commit `feat: geo helpers and route chunking`.
 
 ---
 
@@ -129,7 +129,7 @@ export function legEnergy(chunks, wx, car, profile, settings)
 export function quickWhKm(car, tempC) // refWhKm adjusted for temperature
 ```
 
-- [ ] **Step 1: tests** (flat 10 km chunk at given speed and temperature):
+- [x] **Step 1: tests** (flat 10 km chunk at given speed and temperature):
 ```js
 const flat = (vKmh) => [{ d:10000, t:10000/(vKmh/3.6), v:vKmh/3.6, mode:0, brg:0, elev0:0, elev1:0 }];
 const wx = (t) => ({ tempC:t, windKmh:0, windFromDeg:0, precipMm:0 });
@@ -142,7 +142,7 @@ test('climb 500 m over 10 km costs more than descent recovers', ...);
 test('ferry chunk consumes ~0 and adds wait time', ...);
 test('profile offset applies only above 60 km/h', ...);
 ```
-- [ ] **Step 2:** implement per spec §6. Speed rule: `vOsrmKmh >= 60 ? vOsrm*factor + offset : vOsrm*factor`, clamp to `[5, maxKmh]`. Ferry: `seconds = chunk.t` and (once per contiguous ferry run — handled in `legEnergy`) `+ ferryWaitMin*60`; energy = parked drain at `offPctH` × usableKwh × hours. Run tests, tune constants until ranges hold. Commit `feat: energy model, car and profile presets`.
+- [x] **Step 2:** implement per spec §6. Speed rule: `vOsrmKmh >= 60 ? vOsrm*factor + offset : vOsrm*factor`, clamp to `[5, maxKmh]`. Ferry: `seconds = chunk.t` and (once per contiguous ferry run — handled in `legEnergy`) `+ ferryWaitMin*60`; energy = parked drain at `offPctH` × usableKwh × hours. Run tests, tune constants until ranges hold. Commit `feat: energy model, car and profile presets`.
 
 ---
 
@@ -159,8 +159,8 @@ export function chargeSession({ car, siteKw, fromSoc, toSoc, coldStart=false, ov
 export function restDrainPctPerH(sentry, tempC, s /* settings.sentry */)
 export function socAfterRest(soc, hours, sentry, tempC, s)
 ```
-- [ ] **Step 1: tests:** 10→50 % at 250 kW site ≈ 9–13 min incl. 3 min overhead and 30 kWh stored, ~31.9 kWh billed; same at 150 kW site takes longer; `toSoc <= fromSoc` → 0 kWh, 0 min; coldStart adds ≥ 3 min; `restDrainPctPerH(true, 10)` = 0.2, `(true, -5)` = 0.26; `socAfterRest(50, 10, true, 10)` = 48.
-- [ ] **Step 2:** implement (1 % steps, `dt = 0.01*usable / min(curve, siteKw, maxDcKw)`; coldStart multiplies power by 0.6 while elapsed < 10 min). Commit `feat: charging model`.
+- [x] **Step 1: tests:** 10→50 % at 250 kW site ≈ 9–13 min incl. 3 min overhead and 30 kWh stored, ~31.9 kWh billed; same at 150 kW site takes longer; `toSoc <= fromSoc` → 0 kWh, 0 min; coldStart adds ≥ 3 min; `restDrainPctPerH(true, 10)` = 0.2, `(true, -5)` = 0.26; `socAfterRest(50, 10, true, 10)` = 48.
+- [x] **Step 2:** implement (1 % steps, `dt = 0.01*usable / min(curve, siteKw, maxDcKw)`; coldStart multiplies power by 0.6 while elapsed < 10 min). Commit `feat: charging model`.
 
 ---
 
@@ -180,8 +180,8 @@ export function deserialize(text) → trip  // throws Error('Not an ABTCP trip f
 export function createStore({ storage = globalThis.localStorage, key = 'abtcp.trip' } = {})
 // → { get trip, update(fn), replace(trip), subscribe(fn) → unsubscribe, save(), load() → boolean }
 ```
-- [ ] **Step 1: tests:** round-trip `deserialize(serialize(defaultTrip()))` deep-equals; partial doc `{version:1, stops:[]}` gets defaults; garbage throws; store with an in-memory storage object saves on `update` and `load()` restores; subscribers fire once per update.
-- [ ] **Step 2:** implement. Commit `feat: trip state and serialization`.
+- [x] **Step 1: tests:** round-trip `deserialize(serialize(defaultTrip()))` deep-equals; partial doc `{version:1, stops:[]}` gets defaults; garbage throws; store with an in-memory storage object saves on `update` and `load()` restores; subscribers fire once per update.
+- [x] **Step 2:** implement. Commit `feat: trip state and serialization`.
 
 ---
 
@@ -202,7 +202,7 @@ export function compute(trip) // → { stops: StopResult[], summary }
 Energy for a leg is recomputed inside `compute` from `leg.route.chunks` + `leg.weather` via `legEnergy`, so profile/car/settings edits apply instantly. Stored leg shape (from Task 9):
 `trip.legs[key] = { status:'ok', route:{ km, osrmH, chunks:number[][], last:[lat,lng,elev], ferries:[{km,h,name}] }, weather:{tempC, windKmh, windFromDeg, precipMm, source, at}, computedAt }` or `{ status:'failed', error }`.
 
-- [ ] **Step 1: tests** (helpers build a trip with synthetic ok legs: `mkLeg(km, hours)` producing a single flat chunk):
+- [x] **Step 1: tests** (helpers build a trip with synthetic ok legs: `mkLeg(km, hours)` producing a single flat chunk):
   - two charger stops 100 km apart, start 90 %: arrivalSoc[0] ≈ 90 − 100·whKm/750; session counted; `uniqueCounted` 2; `longestStreak` 2.
   - second visit to the same siteId: not `isNew`, `uniqueCounted` stays 1, timer unchanged.
   - rest 30 h with sentry between two sites → second session `broken`, `firstBreakIndex` = 1, `longestStreak` 1, `currentStreak` 1.
@@ -210,7 +210,7 @@ Energy for a leg is recomputed inside `compute` from `leg.route.chunks` + `leg.w
   - leg missing → `leg.status 'pending'`, `summary.pendingLegs` 1, warning.
   - arrival below reserve → warning level 'warn'; below 0 → 'error'.
   - point stop with `charge:{targetSoc:80, kw:11}` adds energy but no session.
-- [ ] **Step 2:** implement per spec §8. Commit `feat: timeline with streak rules`.
+- [x] **Step 2:** implement per spec §8. Commit `feat: timeline with streak rules`.
 
 ---
 
@@ -237,8 +237,8 @@ export async function weatherAt({ lat, lng, time /* ms */, override, fetchImpl, 
 // geocode.js
 export async function geocode(q, { fetchImpl }) // Photon → [{ name, lat, lng }] (max 6); falls back to Nominatim
 ```
-- [ ] **Step 1: tests** with a fake `fetchImpl` that records URLs and returns canned JSON: `routeUrl` string exact; `table` maps `null` through; elevation batches 250 points into 3 calls and caches repeats; `weatherAt` picks forecast for `time` within 15 days of `now`, archive (date − 1 year) otherwise, override when enabled, `default` (10 °C) on fetch error; queue never exceeds `maxConcurrent`.
-- [ ] **Step 2:** implement. Commit `feat: routing, elevation, weather, geocoding services`.
+- [x] **Step 1: tests** with a fake `fetchImpl` that records URLs and returns canned JSON: `routeUrl` string exact; `table` maps `null` through; elevation batches 250 points into 3 calls and caches repeats; `weatherAt` picks forecast for `time` within 15 days of `now`, archive (date − 1 year) otherwise, override when enabled, `default` (10 °C) on fetch error; queue never exceeds `maxConcurrent`.
+- [x] **Step 2:** implement. Commit `feat: routing, elevation, weather, geocoding services`.
 
 ---
 
@@ -257,8 +257,8 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt })
 `candidates`: `db.nearest(from, {n:60, filter: usable && not in trip stops})` → optional toward filter (`progressKm > 0` where progress = dist(from,dest) − dist(cand,dest)) → `osrm.table` → drop nulls → `arrivalSoc = fromSoc − roadKm·quickWhKm/(usable·10)` → sort by roadKm.
 `autoChain`: loop up to `n`: take candidates, try in order: append stop, `buildLeg`, `compute`; keep if arrivalSoc ≥ reserve else remove and try next (max 3 tries); stop when destination within `haversine < 30 km` or no candidate.
 
-- [ ] **Step 1: tests** with fake osrm/elevation/weather: `buildLeg` stores chunks with elevations and weather; `candidates` excludes visited stops and nulls, sorts by road km, toward filter drops sites that move away; `autoChain(2)` appends two stops and each has an ok leg.
-- [ ] **Step 2:** implement. Commit `feat: planner with candidates and auto-chain`.
+- [x] **Step 1: tests** with fake osrm/elevation/weather: `buildLeg` stores chunks with elevations and weather; `candidates` excludes visited stops and nulls, sorts by road km, toward filter drops sites that move away; `autoChain(2)` appends two stops and each has an ok leg.
+- [x] **Step 2:** implement. Commit `feat: planner with candidates and auto-chain`.
 
 ---
 
@@ -278,11 +278,11 @@ export function createSidebar({ el, store, planner, db, geocode, actions }) // r
 ```
 DOM ids used by tests: `#app`, `#counter-unique`, `#counter-streak`, `#counter-km`, `#counter-time`, `#counter-kwh`, `#counter-eta`, `#btn-export`, `#btn-import`, `#file-import`, `#btn-new`, `#btn-recompute`, `#start-search`, `#start-results`, `#start-time`, `#start-soc`, `#stops` (cards `.stop[data-id]` with `.arrival-soc`, `.deadline`, `input.charge-target`, `input.rest-hours`, `input.rest-sentry`, `.btn-remove`), `#candidates` (`.candidate[data-site]`), `#btn-autochain`, `#autochain-n`, `#tab-trip`, `#tab-settings`, settings inputs `[data-setting="rules.windowH"]` etc. (data-setting = dotted path into `trip.settings`), car fields `[data-car="usableKwh"]`, profile fields `[data-profile="offsetKmh"]`, `#toast`.
 
-- [ ] **Step 1:** write `index.html` (header counters + buttons, `#sidebar` with two tabs, `#map`), `styles.css` (dark UI, 400 px sidebar, cards).
-- [ ] **Step 2:** `map.js`: canvas renderer `L.circleMarker` per usable site (radius 4, color by class), route `L.polyline` per leg colored by arrival SoC (`> 30` green, `> 15` amber, else red), numbered `L.divIcon` stop markers, start (green) / destination (purple) markers, popup with action buttons dispatching `siteClick` with `{site, action}`.
-- [ ] **Step 3:** `sidebar.js`: render function builds the whole panel from `compute(trip)`; event delegation for sliders (`change`), buttons, tabs; start search with 400 ms debounce → `geocode`; candidates panel refreshes after each stop change (`planner.candidates`) with a "toward destination" checkbox; settings tab writes `trip.settings`/`car`/`profile` by data attributes.
-- [ ] **Step 4:** `main.js`: load DB → create store (load or default) → services (OSRM base from settings) → planner → map + sidebar → `planner.ensureLegs()` in background → toasts on errors.
-- [ ] **Step 5:** run `python -m http.server 8080`, open with Playwright, screenshot, fix console errors. Commit `feat: planner UI`.
+- [x] **Step 1:** write `index.html` (header counters + buttons, `#sidebar` with two tabs, `#map`), `styles.css` (dark UI, 400 px sidebar, cards).
+- [x] **Step 2:** `map.js`: canvas renderer `L.circleMarker` per usable site (radius 4, color by class), route `L.polyline` per leg colored by arrival SoC (`> 30` green, `> 15` amber, else red), numbered `L.divIcon` stop markers, start (green) / destination (purple) markers, popup with action buttons dispatching `siteClick` with `{site, action}`.
+- [x] **Step 3:** `sidebar.js`: render function builds the whole panel from `compute(trip)`; event delegation for sliders (`change`), buttons, tabs; start search with 400 ms debounce → `geocode`; candidates panel refreshes after each stop change (`planner.candidates`) with a "toward destination" checkbox; settings tab writes `trip.settings`/`car`/`profile` by data attributes.
+- [x] **Step 4:** `main.js`: load DB → create store (load or default) → services (OSRM base from settings) → planner → map + sidebar → `planner.ensureLegs()` in background → toasts on errors.
+- [x] **Step 5:** run `python -m http.server 8080`, open with Playwright, screenshot, fix console errors. Commit `feat: planner UI`.
 
 ---
 
@@ -291,23 +291,23 @@ DOM ids used by tests: `#app`, `#counter-unique`, `#counter-streak`, `#counter-k
 **Files:**
 - Create: `tools/capture_fixtures.py`, `tests/fixtures/*.json`, `tests/e2e/test_app.py`, `tests/e2e/server.py`
 
-- [ ] **Step 1:** `capture_fixtures.py` calls the real OSRM route for Tromsø→Skibotn, Skibotn→Setermoen, Setermoen→Narvik and the table Tromsø→60 nearest, saving `tests/fixtures/osrm_route_<lat1>_<lng1>_<lat2>_<lng2>.json` (3-decimal keys) and `osrm_table_69.650_18.955.json`.
-- [ ] **Step 2:** `test_app.py` (plain script with asserts, no pytest dependency): starts `http.server` on a free port in a thread; `page.route` handlers: OSRM route/table → fixture by rounded coords (404 if missing); elevation → `{elevation:[50,...]}`; Open-Meteo forecast/archive → canned 10 °C / 10 km/h; Photon → canned Tromsø. Scenarios:
+- [x] **Step 1:** `capture_fixtures.py` calls the real OSRM route for Tromsø→Skibotn, Skibotn→Setermoen, Setermoen→Narvik and the table Tromsø→60 nearest, saving `tests/fixtures/osrm_route_<lat1>_<lng1>_<lat2>_<lng2>.json` (3-decimal keys) and `osrm_table_69.650_18.955.json`.
+- [x] **Step 2:** `test_app.py` (plain script with asserts, no pytest dependency): starts `http.server` on a free port in a thread; `page.route` handlers: OSRM route/table → fixture by rounded coords (404 if missing); elevation → `{elevation:[50,...]}`; Open-Meteo forecast/archive → canned 10 °C / 10 km/h; Photon → canned Tromsø. Scenarios:
   1. load `/` → DB loaded (`#counter-unique` visible, `window.__abtcp.db.sites.length > 8000`).
   2. set start via search "Tromsø" → click result; set `#start-time` `2026-09-01T08:00`, `#start-soc` 90.
   3. click candidate Skibotn → card appears with arrival SoC between 60 and 85; set charge target 70; add Setermoen; add rest 10 h sentry on → next deadline shows `-`/warning? (10 h + drive < 24 h → still OK) then set rest 30 h → `#counter-streak` contains "broken".
   4. export: `page.expect_download()` → save → JSON parses, `stops.length == 2`.
   5. reload → autosaved state restored (2 stops); click New → 0 stops; import file → 2 stops, same arrival SoC text.
   6. settings: set `[data-setting="rules.windowH"]` to 48 → streak OK again; reload → still 48.
-- [ ] **Step 3:** run, fix, commit `test: playwright e2e with fixtures`.
+- [x] **Step 3:** run, fix, commit `test: playwright e2e with fixtures`.
 
 ---
 
 ### Task 12: README, example trip, final verification
 
-- [ ] **Step 1:** `README.md`: what it is, contest rules summary + link, how to use, how to run locally, how to refresh the charger DB, how to run tests, GitHub Pages deploy (Settings → Pages → main / root), disclaimers (fair use of OSRM demo, rules verification).
-- [ ] **Step 2:** `examples/tromso-south.json` produced by running auto-chain with the real services (live) for ~8 stops as a starter.
-- [ ] **Step 3:** run `npm test` and `python tests/e2e/test_app.py`; commit `docs: readme and example trip`.
+- [x] **Step 1:** `README.md`: what it is, contest rules summary + link, how to use, how to run locally, how to refresh the charger DB, how to run tests, GitHub Pages deploy (Settings → Pages → main / root), disclaimers (fair use of OSRM demo, rules verification).
+- [x] **Step 2:** `examples/tromso-south.json` produced by running auto-chain with the real services (live) for ~8 stops as a starter.
+- [x] **Step 3:** run `npm test` and `python tests/e2e/test_app.py`; commit `docs: readme and example trip`.
 
 ## Self-review
 

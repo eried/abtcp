@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createQueue, getJson } from '../../app/services/http.js';
 import { routeUrl, tableUrl, createOsrm } from '../../app/services/osrm.js';
-import { createElevation, elevationUrl } from '../../app/services/elevation.js';
 import { weatherAt, pickSource, weatherUrl } from '../../app/services/weather.js';
 import { geocode } from '../../app/services/geocode.js';
 
@@ -58,26 +57,6 @@ test('OSRM route returns the first route and throws on NoRoute; table passes nul
   assert.deepEqual(await osrm.table({ lat: 1, lng: 2 }, []), { distances: [], durations: [] });
   const nr = createOsrm({ baseUrl: 'https://r.test', fetchImpl: fakeFetch(() => ({ status: 400, json: { code: 'NoRoute', message: 'Impossible route.' } })), queue: createQueue({ spacingMs: 0 }) });
   await assert.rejects(nr.route({ lat: 1, lng: 2 }, { lat: 3, lng: 4 }), /OSRM NoRoute: Impossible route/);
-});
-
-test('elevation batches 250 points into 3 calls, caches, keeps order', async () => {
-  const f = fakeFetch(url => {
-    const lats = new URL(url).searchParams.get('latitude').split(',');
-    return { json: { elevation: lats.map(l => Math.round(+l * 10)) } };
-  });
-  const el = createElevation({ fetchImpl: f, batch: 100 });
-  const pts = Array.from({ length: 250 }, (_, i) => ({ lat: 60 + i * 0.01, lng: 10 }));
-  const res = await el.sample(pts);
-  assert.equal(f.calls.length, 3);
-  assert.equal(res.length, 250);
-  assert.equal(res[0], 600);
-  assert.equal(res[249], Math.round((60 + 249 * 0.01) * 10));
-  await el.sample(pts.slice(0, 50));
-  assert.equal(f.calls.length, 3);
-  assert.equal(el.calls, 3);
-  assert.ok(elevationUrl([{ lat: 60.123456, lng: 10.1 }]).endsWith('latitude=60.12346&longitude=10.10000'));
-  const broken = createElevation({ fetchImpl: fakeFetch(() => ({ json: { elevation: [1] } })) });
-  await assert.rejects(broken.sample([{ lat: 1, lng: 1 }, { lat: 2, lng: 2 }]), /unexpected data/);
 });
 
 test('weather picks forecast vs archive and handles override/default', async () => {

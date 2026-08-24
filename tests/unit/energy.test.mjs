@@ -68,7 +68,7 @@ test('ferry chunk consumes ~0 and adds wait time once per crossing', () => {
   const r = legEnergy(chunks, wx(10), CAR, LIMIT, S);
   assert.ok(r.kwh < 0.05, `got ${r.kwh}`);
   assert.equal(r.ferries, 1);
-  assert.ok(Math.abs(r.ferryH - (900 / 3600 + 0.5)) < 1e-9);
+  assert.ok(Math.abs(r.ferryH - (8 / 60 + 5 / 22 + 0.5)) < 1e-9, `ferryH ${r.ferryH}`);
   assert.equal(r.driveH, 0);
 });
 

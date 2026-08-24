@@ -4,6 +4,10 @@
 // 1 ferry), brg (deg), elev0, elev1 (m) }. Weather: { tempC, windKmh, windFromDeg, precipMm }.
 
 const G = 9.81;
+/** Ferry crossing time model: docking + sailing (OSRM's ferry durations are ~2x too slow). */
+export const FERRY_SPEED_KMH = 22;
+export const FERRY_DOCK_MIN = 8;
+export function ferryCrossingH(km) { return FERRY_DOCK_MIN / 60 + km / FERRY_SPEED_KMH; }
 
 export function airDensity(tempC) {
   return 101325 / (287.05 * (tempC + 273.15));
@@ -32,7 +36,7 @@ const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 export function chunkEnergy(chunk, wx, car, profile, settings = {}) {
   const massKg = car.massKg + (car.payloadKg ?? 0);
   if (chunk.mode === 1) {
-    const seconds = chunk.t;
+    const seconds = chunk.d / (FERRY_SPEED_KMH / 3.6);
     const drainPctH = settings.sentry?.offPctH ?? 0.04;
     const kwh = drainPctH / 100 * car.usableKwh * (seconds / 3600);
     return { kwh, seconds, vKmh: chunk.v * 3.6 };
@@ -61,20 +65,24 @@ export function chunkEnergy(chunk, wx, car, profile, settings = {}) {
 export function legEnergy(chunks, wx, car, profile, settings = {}) {
   let kwh = 0, driveS = 0, ferryS = 0, ferries = 0, gain = 0, loss = 0, km = 0;
   let prevMode = 0;
+  let runKm = 0;
+  const closeRun = () => { if (runKm > 0) { ferryS += ferryCrossingH(runKm) * 3600 + (settings.ferryWaitMin ?? 0) * 60; runKm = 0; } };
   for (const c of chunks) {
     const r = chunkEnergy(c, wx, car, profile, settings);
     kwh += r.kwh;
     km += c.d / 1000;
     if (c.mode === 1) {
-      ferryS += r.seconds;
-      if (prevMode !== 1) { ferries++; ferryS += (settings.ferryWaitMin ?? 0) * 60; }
+      if (prevMode !== 1) ferries++;
+      runKm += c.d / 1000;
     } else {
+      closeRun();
       driveS += r.seconds;
       const dz = (c.elev1 ?? c.elev0 ?? 0) - (c.elev0 ?? 0);
       if (dz > 0) gain += dz; else loss -= dz;
     }
     prevMode = c.mode;
   }
+  closeRun();
   return {
     kwh, km, driveH: driveS / 3600, ferryH: ferryS / 3600, ferries,
     gainM: Math.round(gain), lossM: Math.round(loss), whKm: km > 0 ? kwh * 1000 / km : 0,
