@@ -227,11 +227,13 @@ def test_plan_export_import(page, url, log):
     assert page.input_value('[data-setting="rules.windowH"]') == "48"
     page.click("#tab-trip")
 
-    # --- new trip needs two clicks, then import restores everything
+    # --- new trip asks with a browser confirm; import restores everything
+    page.once("dialog", lambda d: d.dismiss())
     page.click("#btn-new")
-    assert page.locator(".stop").count() == 2, "first click only arms"
+    assert page.locator(".stop").count() == 2, "cancelled confirm keeps the trip"
+    page.once("dialog", lambda d: d.accept())
     page.click("#btn-new")
-    assert page.locator(".stop").count() == 0
+    page.wait_for_function("document.querySelectorAll('.stop').length === 0")
     page.set_input_files("#file-import", str(exported))
     page.wait_for_function("document.querySelectorAll('.stop').length === 2", timeout=15000)
     wait_legs(page)
@@ -283,6 +285,48 @@ def test_plan_export_import(page, url, log):
     page.click(".leaflet-popup [data-act=\'add\']")
     page.wait_for_function("document.querySelectorAll(\'.stop[data-id]\').length === 3", timeout=20000)
     wait_legs(page)
+
+    # --- itinerary calendar view
+    page.click("#btn-itinerary")
+    page.wait_for_selector(".itin-ev", timeout=5000)
+    assert page.locator(".itin-ev.drive").count() >= 3, "drive blocks"
+    assert page.locator(".itin-ev.charge").count() >= 2, "charge blocks"
+    assert page.locator(".itin-day").count() >= 2, "day columns (30 h rest spans days)"
+    assert page.locator(".itin-ev.rest").count() >= 1, "rest block"
+    page.locator(".itin-ev").first.click()
+    page.wait_for_function("document.getElementById('itinerary').hidden === true", timeout=5000)
+
+    # --- popup of a planned charger offers Remove stop
+    sid = page.evaluate("window.__abtcp.store.trip.stops[2].siteId")
+    page.evaluate(f"window.__abtcp.map.openSite({sid})")
+    page.wait_for_selector(".leaflet-popup [data-act=\'removeStop\']", timeout=5000)
+    page.click(".leaflet-popup [data-act=\'removeStop\']")
+    page.wait_for_function("document.querySelectorAll(\'.stop[data-id]\').length === 2", timeout=15000)
+    wait_legs(page)
+
+    # --- battery bars on every card (incl. destination)
+    assert page.locator(".stop[data-id] .batt").count() == 2
+    assert page.locator("#dest-card .batt").count() == 1
+
+    # --- map filter chips
+    total_visible = page.evaluate("window.__abtcp.map.visibleCount()")
+    page.click("#chip-iconic")
+    page.wait_for_function(f"window.__abtcp.map.visibleCount() < {total_visible}", timeout=5000)
+    assert page.evaluate("window.__abtcp.map.visibleCount()") > 0, "iconic sites remain"
+    page.click("#chip-iconic")
+    page.wait_for_function(f"window.__abtcp.map.visibleCount() === {total_visible}", timeout=5000)
+
+    # --- replace a stop from the candidates, keeping its rest
+    set_rest(page, 0, 2, True)
+    old_first = page.evaluate("window.__abtcp.store.trip.stops[0].siteId")
+    page.click('.stop[data-index="0"] [data-act="swap"]')
+    page.wait_for_selector(".candidate[data-site]", timeout=15000)
+    page.click(".candidate[data-site]")
+    page.wait_for_function(f"window.__abtcp.store.trip.stops[0].siteId !== {old_first}", timeout=15000)
+    wait_legs(page)
+    assert page.evaluate("window.__abtcp.store.trip.stops[0].rest.hours") == 2
+    assert page.evaluate("window.__abtcp.store.trip.stops[0].rest.sentry") is True
+    assert page.locator(".stop[data-id]").count() == 2
 
     assert not errors, errors
     page.screenshot(path=str(OUT / "final.png"))

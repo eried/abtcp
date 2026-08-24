@@ -168,3 +168,47 @@ main { display: flex; flex: 1; min-height: 0; }
   #map { height: 45%; order: 1; }
   .counters { order: 3; width: 100%; }
 }
+
+/* Itinerary (calendar) view */
+#itinerary { flex: 1; min-width: 0; overflow: auto; background: var(--bg); padding: 10px 14px 20px; }
+#itinerary[hidden] { display: none; }
+.itin-empty { color: var(--muted); padding: 40px; text-align: center; }
+.itin-grid { display: flex; align-items: flex-start; }
+.itin-gutter { position: sticky; left: 0; z-index: 5; background: var(--bg); width: 34px; flex: none; }
+.itin-day { width: 195px; flex: none; border-left: 1px solid var(--line); }
+.itin-dayhead { height: 30px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: var(--muted); position: sticky; top: 0; background: var(--bg); z-index: 4; border-bottom: 1px solid var(--line); }
+.itin-col { position: relative; }
+.itin-hourlbl { position: absolute; right: 6px; transform: translateY(-50%); font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.itin-line { position: absolute; left: 0; right: 0; border-top: 1px dashed #1c2632; }
+.itin-ev { position: absolute; left: 3px; right: 3px; border-radius: 6px; padding: 2px 6px; overflow: hidden; font-size: 11px; line-height: 1.25; cursor: pointer; border: 1px solid rgba(255,255,255,.12); color: #fff; }
+.itin-ev b { display: block; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.itin-ev small { display: block; color: rgba(255,255,255,.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.itin-ev.drive { background: #1d4ed8cc; }
+.itin-ev.drive { left: 3px; right: 34%; }
+.itin-ev.rest { left: 3px; right: 34%; }
+.itin-ev.charge { background: #b91c1cd9; left: 68%; right: 3px; z-index: 2; padding: 1px 4px; }
+.itin-ev.rest { background: #6d28d9b3; }
+.itin-ev.broken { outline: 2px solid var(--red); }
+.itin-deadline { position: absolute; left: 0; right: 0; border-top: 2px solid var(--red); z-index: 3; pointer-events: none; }
+.itin-deadline span { position: absolute; right: 4px; top: -9px; font-size: 10px; background: var(--red); color: #fff; padding: 0 5px; border-radius: 4px; }
+.stop.flash { outline: 2px solid var(--blue); }
+.iconic-pin { font-size: 18px; line-height: 20px; text-align: center; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); cursor: pointer; }
+.cand-locate { padding: 0 4px; font-size: 12px; }
+
+/* Battery indicator on stop cards */
+.batt { display: flex; align-items: center; gap: 8px; margin: 5px 0 2px; }
+.batt-body { position: relative; flex: 1; height: 12px; border: 1px solid #3b4a5e; border-radius: 4px; background: #0d1319; overflow: hidden; }
+.batt-fill { position: absolute; top: 0; bottom: 0; }
+.batt-fill.good { background: var(--green); }
+.batt-fill.low { background: var(--amber); }
+.batt-fill.bad { background: var(--red); }
+.batt-fill.gain { background: repeating-linear-gradient(45deg, #15803d, #15803d 4px, #22c55e 4px, #22c55e 8px); }
+.batt-fill.drain { background: repeating-linear-gradient(45deg, #b45309, #b45309 4px, #f59e0b 4px, #f59e0b 8px); }
+.batt-tick { position: absolute; top: -1px; bottom: -1px; width: 2px; background: rgba(255,255,255,.55); }
+.batt-lbl { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stop.replacing { outline: 2px dashed var(--blue); }
+
+/* Map filter chips */
+#map-filters { position: absolute; top: 10px; right: 10px; z-index: 660; display: flex; gap: 6px; }
+#map-filters .chip { background: rgba(11,15,20,.92); border: 1px solid var(--line); color: var(--text); font-size: 12px; padding: 5px 10px; border-radius: 999px; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+#map-filters .chip.active { background: var(--red); border-color: var(--red); color: #fff; font-weight: 600; }

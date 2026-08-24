@@ -43,10 +43,13 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
   };
   map.on('zoomend', () => { for (const entry of markers.values()) applyStyle(entry); });
 
+  let filtered = false;
+
   function setSites(sites, classify, popupFn) {
     popupHtml = popupFn || popupHtml;
     siteLayer.clearLayers();
     markers.clear();
+    filtered = false;
     for (const s of sites) {
       const cls = classify(s);
       const m = L.circleMarker([s.lat, s.lng], { renderer, ...STYLE[cls] });
@@ -54,7 +57,12 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
       m.bindPopup(() => popupHtml(s), { maxWidth: 300, autoPanPadding: [40, 40] });
       m.on('click', () => emit('siteClick', { site: s }));
       m.addTo(siteLayer);
-      if (s.iconic) L.circleMarker([s.lat, s.lng], { renderer, radius: 8.5, color: '#eab308', weight: 2, fill: false, opacity: 0.95, interactive: false }).addTo(siteLayer);
+      if (s.iconic) {
+        const pin = L.marker([s.lat, s.lng], { icon: L.divIcon({ className: 'iconic-pin', html: '🏅', iconSize: [22, 22], iconAnchor: [11, 24] }), zIndexOffset: 800 });
+        pin.bindTooltip(`🏅 ${s.iconic}`);
+        pin.on('click', () => openSite(s.id));
+        pin.addTo(siteLayer);
+      }
       markers.set(s.id, { marker: m, cls, site: s });
     }
   }
@@ -115,8 +123,34 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
     if (!b) return;
     e.preventDefault();
     e.stopPropagation();
-    emit('siteAction', { act: b.dataset.act, siteId: Number(b.dataset.site) });
+    emit('siteAction', { act: b.dataset.act, siteId: Number(b.dataset.site), stopId: b.dataset.stop || null });
   });
 
-  return { map, setTiles, setSites, restyle, setRoute, setStops, setCandidates, fitTo, openSite, on, closePopup: () => map.closePopup(), size: () => markers.size };
+  function panToShow(lat, lng) {
+    map.setView([lat, lng], Math.max(map.getZoom(), 9));
+  }
+
+  /** Show only sites where fn(site) is true; null restores everything. */
+  function applyFilter(fn) {
+    if (!fn) {
+      if (!filtered) return;
+      for (const e of markers.values()) if (!e.marker._map) e.marker.addTo(siteLayer);
+      filtered = false;
+      return;
+    }
+    filtered = true;
+    for (const e of markers.values()) {
+      const show = fn(e.site);
+      if (show && !e.marker._map) e.marker.addTo(siteLayer);
+      else if (!show && e.marker._map) siteLayer.removeLayer(e.marker);
+    }
+  }
+
+  function visibleCount() {
+    let n = 0;
+    for (const e of markers.values()) if (e.marker._map) n++;
+    return n;
+  }
+
+  return { map, setTiles, setSites, restyle, setRoute, setStops, setCandidates, fitTo, openSite, panToShow, applyFilter, visibleCount, on, closePopup: () => map.closePopup(), size: () => markers.size };
 }

@@ -2,7 +2,8 @@
 import { loadChargers, applyIconic, USABLE_STATUSES, STATUS_LABEL } from './chargers.js';
 import { createStore, deserialize, serialize } from './state.js';
 import { compute, legKey } from './model/timeline.js';
-import { routeLatLngs } from './model/geo.js';
+import { routeLatLngs, haversineM } from './model/geo.js';
+import { quickWhKm } from './model/energy.js';
 import { createQueue } from './services/http.js';
 import { createOsrm } from './services/osrm.js';
 import { createElevation } from './services/elevation.js';
@@ -11,8 +12,9 @@ import { geocode } from './services/geocode.js';
 import { createPlanner } from './planner.js';
 import { createMap } from './ui/map.js';
 import { createSidebar } from './ui/sidebar.js';
+import { renderItinerary } from './ui/itinerary.js';
 import { renderSettings, bindSettings } from './ui/settings.js';
-import { createToast, armConfirm } from './ui/toast.js';
+import { createToast } from './ui/toast.js';
 import { fmt, esc, slug } from './ui/format.js';
 
 const $ = id => document.getElementById(id);
@@ -47,6 +49,44 @@ async function main() {
   const map = createMap({ el: $('map'), tiles: store.trip.settings.tiles });
   const sidebar = createSidebar({ el: $('panel-trip'), store, db, planner, geocode, map, toast, setStatus });
 
+  // ---------- map filter chips ----------
+  const filterBar = document.createElement('div');
+  filterBar.id = 'map-filters';
+  filterBar.innerHTML = '<button class="chip" id="chip-reach" title="Only sites the car can reach right now from the end of the plan (straight-line estimate, keeping the reserve)">⚡ reachable</button><button class="chip" id="chip-iconic" title="Only Iconic Charger badge sites">🏅 iconic</button>';
+  $('map').appendChild(filterBar);
+  ['dblclick', 'mousedown'].forEach(ev => filterBar.addEventListener(ev, e => e.stopPropagation()));
+  const mapFilters = { reach: false, iconic: false };
+  let filterSig = '';
+  function applyMapFilters() {
+    if (!mapFilters.reach && !mapFilters.iconic) { map.applyFilter(null); return; }
+    const t = store.trip;
+    let head = t.start;
+    let soc = +t.start.soc;
+    let temp = 10;
+    if (lastTl && lastTl.stops.length) {
+      const last = lastTl.stops[lastTl.stops.length - 1];
+      head = last.stop;
+      soc = last.departSoc;
+      if (last.leg.temp != null) temp = last.leg.temp;
+    }
+    const rangeM = Math.max(0, soc - t.settings.reserveSoc) / 100 * t.car.usableKwh / (quickWhKm(t.car, temp, t.settings.marginPct) / 1000) / 1.25 * 1000;
+    map.applyFilter(site => {
+      if (inTrip.has(site.id)) return true;
+      if (mapFilters.iconic && !site.iconic) return false;
+      if (mapFilters.reach && haversineM(head.lat, head.lng, site.lat, site.lng) > rangeM) return false;
+      return true;
+    });
+  }
+  filterBar.addEventListener('click', e => {
+    e.stopPropagation();
+    const b = e.target.closest('.chip');
+    if (!b) return;
+    const k = b.id === 'chip-reach' ? 'reach' : 'iconic';
+    mapFilters[k] = !mapFilters[k];
+    b.classList.toggle('active', mapFilters[k]);
+    applyMapFilters();
+  });
+
   // ---------- map sites ----------
   const classify = site => {
     const t = store.trip;
@@ -60,7 +100,8 @@ async function main() {
   let visitedSet = new Set();
   const popupHtml = site => {
     const t = store.trip;
-    const isIn = t.stops.some(s => s.siteId === site.id);
+    const inStops = t.stops.map((s, i) => ({ s, i })).filter(x => x.s.siteId === site.id);
+    const isIn = inStops.length > 0;
     const visited = (t.visitedBefore || []).includes(site.id);
     return `<div class="popup"><b>${site.iconic ? '🏅 ' : ''}${esc(site.name)}</b>
       <div class="meta">${esc(STATUS_LABEL[site.status] || site.status)} · ${site.stalls} stalls · ${site.kw || '?'} kW${site.gen ? ` · ${site.gen.toUpperCase()}` : ''}${site.opened ? ` · opened ${esc(site.opened)}` : ''}</div>
@@ -68,20 +109,23 @@ async function main() {
       ${site.tid ? `<a href="https://www.tesla.com/findus/location/supercharger/${encodeURIComponent(site.tid)}" target="_blank" rel="noopener">tesla.com ↗</a>` : ''}
       <div class="popup-actions">
         <button data-act="add" data-site="${site.id}" class="primary">${isIn ? 'Add again (repeat, for charge only)' : 'Add as next stop'}</button>
+        ${inStops.map(x => `<button data-act="removeStop" data-site="${site.id}" data-stop="${esc(x.s.id)}">Remove stop #${x.i + 1}</button>`).join('')}
         <button data-act="visited" data-site="${site.id}" title="Affects the yearly unique-sites counter and suggestion order">${visited ? 'Unmark visited this year' : 'Visited earlier this year'}</button>
       </div></div>`;
   };
   function loadSites() {
     const show = new Set(store.trip.settings.showStatuses);
     map.setSites(db.sites.filter(s => show.has(s.status)), classify, popupHtml);
+    if (mapFilters.reach || mapFilters.iconic) applyMapFilters();
   }
   loadSites();
 
   map.on('stopClick', ({ siteId }) => { if (siteId != null) map.openSite(siteId); });
-  map.on('siteAction', ({ act, siteId }) => {
+  map.on('siteAction', ({ act, siteId, stopId }) => {
     const site = db.byId(siteId);
     if (!site) return;
     if (act === 'add') sidebar.addStop(site);
+    else if (act === 'removeStop' && stopId) { sidebar.removeStop(stopId); map.closePopup(); }
     else if (act === 'visited') {
       store.update(t => { const set = new Set(t.visitedBefore); if (set.has(site.id)) set.delete(site.id); else set.add(site.id); t.visitedBefore = [...set]; });
       map.closePopup();
@@ -111,6 +155,27 @@ async function main() {
     if (name === 'settings') paintSettings();
   }
   Object.entries(tabs).forEach(([k, b]) => b.addEventListener('click', () => showTab(k)));
+
+  // ---------- itinerary ----------
+  const itinEl = $('itinerary');
+  let showItin = false;
+  function setItinerary(on) {
+    showItin = on;
+    itinEl.hidden = !on;
+    $('map').style.display = on ? 'none' : '';
+    $('btn-itinerary').classList.toggle('primary', on);
+    if (on && lastTl) renderItinerary(itinEl, lastTl, store.trip);
+    if (!on) map.map.invalidateSize();
+  }
+  $('btn-itinerary').addEventListener('click', () => setItinerary(!showItin));
+  itinEl.addEventListener('click', e => {
+    const ev = e.target.closest('.itin-ev');
+    if (!ev) return;
+    const i = Number(ev.dataset.i);
+    setItinerary(false);
+    const card = document.querySelector(i >= 0 ? `.stop[data-index="${i}"]` : '#dest-card');
+    if (card) { card.scrollIntoView({ block: 'center' }); card.classList.add('flash'); setTimeout(() => card.classList.remove('flash'), 1600); }
+  });
 
   // ---------- render ----------
   let lastTl = null;
@@ -163,6 +228,10 @@ async function main() {
       stops: tl.stops.map(r => ({ lat: r.stop.lat, lng: r.stop.lng, siteId: r.stop.siteId ?? null, name: r.stop.name, cls: r.stop.kind === 'point' ? 'point' : (r.session && r.session.broken) ? 'broken' : '', tooltip: `${r.i + 1}. ${r.stop.name} · arrive ${fmt.clock(r.arrival)} at ${fmt.pct(r.arrivalSoc)}` })),
       destination: trip.destination,
     });
+    if (showItin) renderItinerary(itinEl, tl, trip);
+    const lastStop = trip.stops[trip.stops.length - 1];
+    const sig = `${trip.stops.length}|${lastStop ? lastStop.id : ''}|${Math.round(tl.stops.length ? tl.stops[tl.stops.length - 1].departSoc : trip.start.soc)}`;
+    if (sig !== filterSig) { filterSig = sig; applyMapFilters(); }
     document.title = `${trip.meta.name} · ABTCP`;
   }
   store.subscribe(render);
@@ -210,14 +279,15 @@ async function main() {
       toast.error(`Import failed: ${err.message}`);
     }
   });
-  $('btn-new').addEventListener('click', e => armConfirm(e.currentTarget, () => {
+  $('btn-new').addEventListener('click', () => {
+    if (!window.confirm('Discard the current trip and start a new empty one?')) return;
     store.reset();
     loadSites();
     paintSettings();
     map.fitTo([[store.trip.start.lat, store.trip.start.lng]]);
     sidebar.refreshCandidates(true);
     toast.show('New trip');
-  }));
+  });
 
   // ---------- background work ----------
   window.__abtcp = { store, db, planner, compute, get timeline() { return lastTl; }, map, sidebar };

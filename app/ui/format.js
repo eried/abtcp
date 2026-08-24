@@ -24,6 +24,11 @@ export const fmt = {
     const d = new Date(ms);
     return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   },
+  day: ms => {
+    if (ms == null || !Number.isFinite(ms)) return '–';
+    const d = new Date(ms);
+    return `${DAYS[d.getDay()]} ${pad(d.getDate())}.${pad(d.getMonth() + 1)}`;
+  },
   temp: t => (t == null || !Number.isFinite(t) ? '–' : `${Math.round(t)} °C`),
   whkm: n => (n == null || !Number.isFinite(n) ? '–' : `${Math.round(n)} Wh/km`),
   n1: n => (n == null || !Number.isFinite(n) ? '–' : (Math.round(n * 10) / 10).toString()),

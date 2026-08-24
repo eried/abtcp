@@ -1,9 +1,193 @@
 [
-  { "_comment": "Community list of Iconic Charger badge sites (Tesla app → Charging Badges → Iconic Chargers). Tesla only reveals the full list in the app; publicly confirmed so far: Tesla Diner, Gigafactory Berlin, Grand Canyon, Yosemite, plus first-in-country/flagship sites. Match entries by supercharge.info `id`, Tesla `tid`, or a unique `match` name substring, with a `badge` label. Extend this file as more badges become known." },
-  { "id": 4272, "badge": "Tesla Diner (Hollywood)" },
-  { "id": 2547, "badge": "Gigafactory Berlin-Brandenburg" },
-  { "id": 2027, "badge": "Grand Canyon (Tusayan)" },
-  { "id": 3380, "badge": "Yosemite (El Portal)" },
-  { "id": 116, "badge": "Harris Ranch — one of the world's largest Superchargers" },
-  { "id": 226, "badge": "Lyngdal — among Europe's first Superchargers (2013)" }
+ {
+  "_comment": "Iconic Charger badge sites, resolved from the community atlas at iconicchargers.com (40 badges / 53 sites; some badges cover several sites, e.g. Great Barrier Reef). Add entries by supercharge.info id, Tesla tid, or unique name `match` as Tesla reveals more. No Swedish site is on the list as of Aug 2026."
+ },
+ {
+  "id": 221,
+  "badge": "Dombås"
+ },
+ {
+  "id": 3449,
+  "badge": "Honningsvåg (Nordkapp)"
+ },
+ {
+  "id": 224,
+  "badge": "Østerbø (Aurland)"
+ },
+ {
+  "id": 2547,
+  "badge": "Gigafactory Berlin"
+ },
+ {
+  "id": 2261,
+  "badge": "Hilden (Seed & Greet)"
+ },
+ {
+  "id": 5957,
+  "badge": "Harderwijk"
+ },
+ {
+  "id": 550,
+  "badge": "Lake Garda"
+ },
+ {
+  "id": 2175,
+  "badge": "Sevilla"
+ },
+ {
+  "id": 8504,
+  "badge": "Gayrettepe (Istanbul)"
+ },
+ {
+  "id": 2577,
+  "badge": "Lovosice"
+ },
+ {
+  "id": 4400,
+  "badge": "Ein Bokek (Dead Sea)"
+ },
+ {
+  "id": 4272,
+  "badge": "Tesla Diner (Hollywood)"
+ },
+ {
+  "id": 1980,
+  "badge": "Golden Gate (Letterman Drive)"
+ },
+ {
+  "id": 1534,
+  "badge": "Santa Monica"
+ },
+ {
+  "id": 1635,
+  "badge": "Santa Monica"
+ },
+ {
+  "id": 3540,
+  "badge": "Santa Monica"
+ },
+ {
+  "id": 3380,
+  "badge": "Yosemite (El Portal)"
+ },
+ {
+  "id": 738,
+  "badge": "Death Valley (Beatty)"
+ },
+ {
+  "id": 993,
+  "badge": "Joshua Tree (Twentynine Palms)"
+ },
+ {
+  "id": 2027,
+  "badge": "Grand Canyon (Tusayan)"
+ },
+ {
+  "id": 7772,
+  "badge": "Bryce Canyon"
+ },
+ {
+  "id": 190,
+  "badge": "Arches (Moab)"
+ },
+ {
+  "id": 4511,
+  "badge": "Arches (Moab)"
+ },
+ {
+  "id": 857,
+  "badge": "Yellowstone (West Yellowstone)"
+ },
+ {
+  "id": 2408,
+  "badge": "Miami Beach"
+ },
+ {
+  "id": 2409,
+  "badge": "Miami Beach"
+ },
+ {
+  "id": 3599,
+  "badge": "Miami Beach"
+ },
+ {
+  "id": 2229,
+  "badge": "Niagara Falls"
+ },
+ {
+  "id": 7506,
+  "badge": "Niagara Falls"
+ },
+ {
+  "id": 1493,
+  "badge": "Whistler"
+ },
+ {
+  "id": 7091,
+  "badge": "Whistler"
+ },
+ {
+  "id": 1446,
+  "badge": "Mount Fuji (Gotemba)"
+ },
+ {
+  "id": 9141,
+  "badge": "Enshu-Morimachi"
+ },
+ {
+  "id": 8842,
+  "badge": "Dunedin"
+ },
+ {
+  "id": 8222,
+  "badge": "Great Barrier Reef"
+ },
+ {
+  "id": 8378,
+  "badge": "Great Barrier Reef"
+ },
+ {
+  "id": 8221,
+  "badge": "Great Barrier Reef"
+ },
+ {
+  "id": 7673,
+  "badge": "Great Barrier Reef"
+ },
+ {
+  "id": 8195,
+  "badge": "Great Barrier Reef"
+ },
+ {
+  "id": 10475,
+  "badge": "Great Barrier Reef"
+ },
+ {
+  "id": 7122,
+  "badge": "Great Barrier Reef"
+ },
+ {
+  "id": 6845,
+  "badge": "Great Barrier Reef"
+ },
+ {
+  "id": 10789,
+  "badge": "Great Barrier Reef"
+ },
+ {
+  "id": 1977,
+  "badge": "Montélimar"
+ },
+ {
+  "id": 1622,
+  "badge": "Mont Saint-Michel"
+ },
+ {
+  "id": 2454,
+  "badge": "Stonehenge"
+ },
+ {
+  "id": 7603,
+  "badge": "Tesla Oasis (Lost Hills)"
+ }
 ]

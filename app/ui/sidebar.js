@@ -12,6 +12,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
   let cands = { key: null, list: [], loading: false, error: null };
   const search = { start: { q: '', results: [], busy: false }, dest: { q: '', results: [], busy: false } };
   let pickMode = null;
+  let replaceId = null;
   let chaining = false;
   let stopChain = false;
   let building = false;
@@ -68,6 +69,14 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     ${candidatesHtml()}`;
   }
 
+  function battHtml(arr, dep, reserve) {
+    const a = Math.max(0, Math.min(100, arr));
+    const d = Math.max(0, Math.min(100, dep));
+    const lo = Math.min(a, d);
+    const hi = Math.max(a, d);
+    return `<div class="batt" title="Arrive at ${fmt.pct(arr)}, leave at ${fmt.pct(dep)} (tick = reserve)"><div class="batt-body"><div class="batt-fill ${socClass(arr, reserve)}" style="width:${lo}%"></div><div class="batt-fill ${d >= a ? 'gain' : 'drain'}" style="left:${lo}%;width:${hi - lo}%"></div><span class="batt-tick" style="left:${reserve}%"></span></div><span class="batt-lbl">${Math.round(arr)} → ${Math.round(dep)} %</span></div>`;
+  }
+
   function stopHtml(r) {
     const trip = store.trip;
     const S = trip.settings;
@@ -76,7 +85,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     const isCharger = stop.kind === 'charger';
     const hasErr = r.warnings.some(w => w.level === 'error');
     const hasWarn = r.warnings.some(w => w.level === 'warn');
-    const cls = ['stop', isCharger ? 'charger' : 'point', (r.session && r.session.broken) || hasErr ? 'broken' : hasWarn ? 'warn' : ''].join(' ');
+    const cls = ['stop', isCharger ? 'charger' : 'point', (r.session && r.session.broken) || hasErr ? 'broken' : hasWarn ? 'warn' : '', stop.id === replaceId ? 'replacing' : ''].join(' ');
     const meta = isCharger
       ? `${esc(stop.country)} · ${stop.stalls} stalls · ${stop.kw || '?'} kW · ${STATUS_LABEL[stop.status] || stop.status || ''}`
       : `${(+stop.lat).toFixed(4)}, ${(+stop.lng).toFixed(4)}`;
@@ -119,9 +128,10 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     const fill = needsFill ? `<div class="row"><button data-act="fill" title="Insert intermediate Superchargers before this stop until it is reachable (prefers sites you have not visited)">⛽ Insert stops before</button></div>` : '';
     return `<article class="${cls}" data-id="${esc(stop.id)}" data-index="${i}">
       <header><span class="num">${i + 1}</span><div class="title"><b>${name}</b><small>${meta}</small></div>
-        <div class="tools"><button class="ghost" data-act="up" title="Move up" ${i === 0 ? 'disabled' : ''}>▲</button><button class="ghost" data-act="down" title="Move down" ${i === tl.stops.length - 1 ? 'disabled' : ''}>▼</button><button class="ghost btn-remove" data-act="remove" title="Remove stop">✕</button></div></header>
+        <div class="tools"><button class="ghost" data-act="locate" title="Show this stop on the map">📍</button><button class="ghost" data-act="swap" title="Replace this charger: click it, then pick another site from the map or the list">⇄</button><button class="ghost" data-act="up" title="Move up" ${i === 0 ? 'disabled' : ''}>▲</button><button class="ghost" data-act="down" title="Move down" ${i === tl.stops.length - 1 ? 'disabled' : ''}>▼</button><button class="ghost btn-remove" data-act="remove" title="Remove stop">✕</button></div></header>
       <div class="leg">${leg}</div>
       <div class="arrive">Arrive <b>${fmt.time(r.arrival)}</b> at <b class="soc arrival-soc ${socClass(r.arrivalSoc, S.reserveSoc)}">${fmt.pct(r.arrivalSoc)}</b></div>
+      ${battHtml(r.arrivalSoc, r.departSoc, S.reserveSoc)}
       <div class="deadline ${dlCls}">${dl}</div>
       ${charge}${rest}${warns}${fill}
       <div class="depart">Depart <b>${fmt.time(r.depart)}</b> at <b class="soc depart-soc">${fmt.pct(r.departSoc)}</b></div>
@@ -140,11 +150,14 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
       leg = '<span class="muted">Routing…</span>';
     }
     const warns = dr.warnings.length ? `<ul class="warnings">${dr.warnings.map(w => `<li class="${w.level}">${esc(w.msg)}</li>`).join('')}</ul>` : '';
+    const fillDest = dr.leg.status === 'failed' || (dr.leg.status === 'ok' && dr.arrivalSoc < S.reserveSoc)
+      ? `<div class="row"><button data-act="fill-dest" title="Keep adding the nearest new Superchargers toward the destination (same as Auto-chain below)">⛽ Auto-chain toward the destination</button></div>` : '';
     return `<article class="stop dest-card" id="dest-card">
       <header><span class="num" style="background:#7c3aed;color:#fff">D</span><div class="title"><b>${esc(dr.destination.name)}</b><small>destination — end of the trip</small></div></header>
       <div class="leg">${leg}</div>
       <div class="arrive">Arrive <b>${fmt.time(dr.arrival)}</b> at <b class="soc ${socClass(dr.arrivalSoc, S.reserveSoc)}">${fmt.pct(dr.arrivalSoc)}</b></div>
-      ${warns}
+      ${battHtml(dr.arrivalSoc, dr.arrivalSoc, S.reserveSoc)}
+      ${warns}${fillDest}
     </article>`;
   }
 
@@ -153,7 +166,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     const last = trip.stops[trip.stops.length - 1];
     const from = last ? last.name : trip.start.name;
     return `<section class="card candidates">
-      <header><h3>Next stop from ${esc(from)}</h3><label title="Only sites closer to the destination"><input type="checkbox" id="cand-toward" ${trip.settings.candidates.toward ? 'checked' : ''} ${trip.destination ? '' : 'disabled'}> toward</label><button class="ghost" id="btn-cand-refresh" title="Refresh">↻</button></header>
+      <header><h3>${replaceId ? 'Replacing a stop — pick a site' : `Next stop from ${esc(from)}`}</h3><label title="Only sites closer to the destination"><input type="checkbox" id="cand-toward" ${trip.settings.candidates.toward ? 'checked' : ''} ${trip.destination ? '' : 'disabled'}> toward</label><button class="ghost" id="btn-cand-refresh" title="Refresh">↻</button></header>
       <div id="candidates">${candidatesListHtml()}</div>
       <div class="autochain"><input type="number" id="autochain-n" value="5" min="1" max="80" aria-label="Number of stops to add">${chaining ? '<button id="btn-chain-stop" class="danger">Stop</button>' : '<button id="btn-autochain" class="primary" title="Greedily add the nearest new sites (toward the destination if set)">Auto-chain stops</button>'}<span class="status" id="autochain-status"></span></div>
     </section>`;
@@ -166,8 +179,8 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     if (!list.length) return '<div class="candidate empty">No new sites within the search radius (see Settings).</div>';
     const reserve = store.trip.settings.reserveSoc;
     return list.map(c => `<div class="candidate" data-site="${c.site.id}" title="Add ${esc(c.site.name)} as the next stop">
-      <b>${c.site.iconic ? '🏅 ' : ''}${esc(c.site.name)}</b><span class="dist">${fmt.km(c.roadKm)} · ${fmt.h(c.roadH)}</span>
-      <span class="meta">${c.site.kw || '?'} kW · ${c.site.stalls} stalls${c.progressKm != null ? ` · <span class="prog">${c.progressKm >= 0 ? '+' : ''}${Math.round(c.progressKm)} km toward${c.progressSrc === 'road' ? '' : ' (line)'}</span>` : ''}${c.visitedYear ? ' · <span style="color:#f59e0b">↻ visited this year</span>' : ''}</span><span class="soc ${socClass(c.arrivalSoc, reserve)}">≈ ${fmt.pct(c.arrivalSoc)}</span>
+      <b>${c.site.iconic ? '🏅 ' : ''}${esc(c.site.name)}</b><span class="dist">${fmt.km(c.roadKm)} · ${fmt.h(c.roadH)} <button class="ghost cand-locate" data-locate="${c.site.id}" title="Show on the map">📍</button></span>
+      <span class="meta">${c.site.kw || '?'} kW · ${c.site.stalls} stalls${c.progressKm != null ? ` · <span class="prog" title="Road-distance progress toward the destination gained by this hop; (line) = straight-line estimate when the routing table was unavailable">${c.progressKm >= 0 ? '+' : ''}${Math.round(c.progressKm)} km toward${c.progressSrc === 'road' ? '' : ' (line)'}</span>` : ''}${c.visitedYear ? ' · <span style="color:#f59e0b">↻ visited this year</span>' : ''}</span><span class="soc ${socClass(c.arrivalSoc, reserve)}">≈ ${fmt.pct(c.arrivalSoc)}</span>
     </div>`).join('');
   }
 
@@ -183,7 +196,23 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
   function candKey() {
     const t = store.trip;
     const last = t.stops[t.stops.length - 1];
-    return [last ? last.id : `start:${t.start.lat},${t.start.lng}`, t.destination ? `${t.destination.lat},${t.destination.lng}` : '', t.settings.candidates.toward, t.settings.candidates.maxKm, t.settings.candidates.limit, t.settings.osrmUrl].join('|');
+    return [last ? last.id : `start:${t.start.lat},${t.start.lng}`, t.destination ? `${t.destination.lat},${t.destination.lng}` : '', t.settings.candidates.toward, t.settings.candidates.maxKm, t.settings.candidates.limit, t.settings.osrmUrl, replaceId || ''].join('|');
+  }
+
+  /** When replacing, rank sites around the replaced stop: from its predecessor, toward its successor. */
+  function candArgs() {
+    if (!replaceId || !tl) return {};
+    const t = store.trip;
+    const i = t.stops.findIndex(x => x.id === replaceId);
+    if (i < 0) return {};
+    const originRes = i > 0 ? tl.stops[i - 1] : null;
+    const next = t.stops[i + 1] || t.destination;
+    return {
+      from: originRes ? originRes.stop : t.start,
+      fromSoc: originRes ? originRes.departSoc : +t.start.soc,
+      destOverride: next ? { lat: next.lat, lng: next.lng } : null,
+      toward: next ? true : undefined,
+    };
   }
 
   async function refreshCandidates(force = false) {
@@ -192,7 +221,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     cands = { key, list: [], loading: true, error: null };
     renderCandidates();
     try {
-      const list = await planner.candidates();
+      const list = await planner.candidates(candArgs());
       if (candKey() !== key) return;
       cands = { key, list, loading: false, error: null };
     } catch (e) {
@@ -219,8 +248,29 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     if (missing) { buildMissing(); /* something new appeared while building; failed legs retry via Retry/Recompute */ }
   }
 
+  function performReplace(site) {
+    const rid = replaceId;
+    replaceId = null;
+    let idx = -1;
+    store.update(t => {
+      idx = t.stops.findIndex(x => x.id === rid);
+      if (idx < 0) return;
+      const old = t.stops[idx];
+      const ns = newStop({ site, targetSoc: old.charge ? old.charge.targetSoc : t.settings.defaultTargetSoc });
+      ns.rest = old.rest ? { ...old.rest } : null;
+      ns.note = old.note;
+      t.stops[idx] = ns;
+    });
+    if (idx < 0) return;
+    toast.success(`Stop #${idx + 1} is now ${site.name}`);
+    planner.pruneLegs();
+    map.closePopup();
+    buildMissing().then(() => refreshCandidates(true));
+  }
+
   async function addStop(site, { targetSoc = null } = {}) {
     if (!site) return;
+    if (replaceId) { performReplace(site); return; }
     const stop = newStop({ site, targetSoc: targetSoc ?? store.trip.settings.defaultTargetSoc });
     store.update(t => { t.stops.push(stop); });
     map.closePopup();
@@ -236,6 +286,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
   }
 
   function removeStop(id) {
+    if (replaceId === id) replaceId = null;
     store.update(t => { t.stops = t.stops.filter(s => s.id !== id); });
     planner.pruneLegs();
     buildMissing().then(() => refreshCandidates(true));
@@ -395,6 +446,8 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
       else { setDestination(place); render(tl); map.fitTo(tripPoints()); }
       return;
     }
+    const loc = e.target.closest('[data-locate]');
+    if (loc) { e.stopPropagation(); map.openSite(Number(loc.dataset.locate)); return; }
     const cand = e.target.closest('.candidate[data-site]');
     if (cand) { addStop(db.byId(cand.dataset.site)); return; }
     const b = e.target.closest('button');
@@ -406,6 +459,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     if (b.id === 'btn-cand-refresh') { refreshCandidates(true); return; }
     if (b.id === 'btn-autochain') { runAutoChain(); return; }
     if (b.id === 'btn-chain-stop') { stopChain = true; b.disabled = true; return; }
+    if (b.dataset.act === 'fill-dest') { runAutoChain(); return; }
     const card = b.closest('.stop');
     if (!card || !b.dataset.act) return;
     const id = card.dataset.id;
@@ -415,6 +469,17 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     else if (b.dataset.act === 'down') moveStop(id, +1);
     else if (b.dataset.act === 'retry') retryLeg(index);
     else if (b.dataset.act === 'fill') runGapFill(id);
+    else if (b.dataset.act === 'locate') {
+      const s = store.trip.stops.find(x => x.id === id);
+      if (!s) return;
+      if (s.siteId != null) map.openSite(s.siteId);
+      else map.panToShow(s.lat, s.lng);
+    } else if (b.dataset.act === 'swap') {
+      replaceId = replaceId === id ? null : id;
+      toast.show(replaceId ? `Pick a charger from the map or the list below to replace stop #${index + 1} (charge/rest settings are kept)` : 'Replace cancelled');
+      render(tl);
+      refreshCandidates(true);
+    }
   });
 
   map.on('mapClick', ({ lat, lng }) => {
