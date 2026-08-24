@@ -13,16 +13,21 @@ never below your reserve, never past the deadline.
 
 ## The rules it encodes
 
-- **Longest Trip** = longest continuous streak of *unique* Supercharger sites where every new
-  site's charging session starts **within 24 h of the previous session's start**.
+- **Longest Trip** = longest continuous streak of *unique* Supercharger sites (distinct locations as
+  shown in the app / navigation) where you begin a charging session at each new site **within 24 h
+  of the previous session**. Tesla's page says "start time" in the category definition and "end of
+  your previous session" in the trip explanation; the planner defaults to the stricter
+  start-anchored timer (switchable in Settings).
 - Repeat visits are allowed; they neither count nor reset the timer.
-- Only Tesla Supercharger sites count (no destination chargers).
+- Sessions at any Supercharger worldwide count; you compete in the region where you visited the most
+  unique sites (EMEA excludes *residents* of Italy, Portugal, Greece, UAE, Saudi Arabia, Romania,
+  Poland, Iceland, Estonia and Qatar — sites there still count).
+- Competition period: 1 Jan 2026 00:01 – 31 Dec 2026 23:59 local time; sessions outside are flagged.
 - Ties break on total kWh — the header also tracks "supercharged kWh" and unique sites for the year.
 - No minimum session size is published; the planner charges **at least +8 %** at every site so a
   session registers (Settings → Contest rules).
-
-Tesla's page blocks automated access, so the rules above were taken from write-ups that quote it.
-**Verify them on Tesla's page** — every parameter (window, timer anchor, minimums) is editable.
+- Enroll: enable "Share Charging Data with Tesla App" and open the 2026 Passport in the app before
+  1 Jan 2027 (and again after your last session of the year).
 
 ## Features
 

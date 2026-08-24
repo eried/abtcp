@@ -72,6 +72,9 @@ export function compute(trip) {
   const profile = trip.profile;
   const usable = car.usableKwh;
   const startTime = parseLocal(trip.start.time);
+  const periodStart = S.rules.periodStart ? Date.parse(S.rules.periodStart) : NaN;
+  const periodEnd = S.rules.periodEnd ? Date.parse(S.rules.periodEnd) : NaN;
+  const inPeriod = t => (!Number.isFinite(periodStart) || t >= periodStart) && (!Number.isFinite(periodEnd) || t <= periodEnd);
   const visitedBefore = new Set((trip.visitedBefore || []).map(Number));
 
   let time = startTime;
@@ -118,7 +121,9 @@ export function compute(trip) {
       const sess = chargeSession({ car, siteKw: stop.kw, fromSoc: s, toSoc: target, coldStart, overheadMin: S.plugOverheadMin });
       const start = t + S.plugOverheadMin * MIN;
       const end = start + sess.chargeMin * MIN;
-      const isNew = !counted.has(stop.siteId);
+      const inside = inPeriod(start);
+      if (!inside) warnings.push({ level: 'error', msg: 'Session outside the competition period — not counted' });
+      const isNew = inside && !counted.has(stop.siteId);
       const anchorTime = lastStart == null ? null : (S.rules.anchor === 'end' ? lastEnd : lastStart);
       const deadline = anchorTime == null ? null : anchorTime + S.rules.windowH * H;
       const sinceLastH = lastStart == null ? null : (start - lastStart) / H;
@@ -141,7 +146,7 @@ export function compute(trip) {
         longestStreak = Math.max(longestStreak, currentStreak);
         lastStart = start;
         lastEnd = end;
-      } else {
+      } else if (inside) {
         warnings.push({ level: 'info', msg: 'Repeat site: does not count and does not reset the timer' });
       }
       session = { start, end, minutes: sess.minutes, chargeMin: sess.chargeMin, kwhStored: sess.kwhStored, kwhBilled: sess.kwhBilled, avgKw: sess.avgKw, counted: isNew, isNew, deadline, deadlineInH, sinceLastH, broken, belowMin, targetSoc: target, ac: false };

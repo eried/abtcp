@@ -197,3 +197,15 @@ test('smoothElevations removes single-sample spikes and keeps real climbs', asyn
   const sc = smoothElevations(climb, 2);
   assert.ok(Math.abs(sc[sc.length - 1] - sc[0] - 370) < 15);
 });
+
+test('sessions outside the competition period are flagged and not counted', () => {
+  const t = trip({ stops: [newStop({ site: A, targetSoc: 80 }), newStop({ site: B, targetSoc: 80 })], legs: [{ km: 100 }, { km: 100 }], start: { time: '2027-01-02T08:00' } });
+  const { stops, summary } = compute(t);
+  assert.equal(summary.uniqueCounted, 0);
+  assert.equal(stops[0].session.counted, false);
+  assert.ok(stops[0].warnings.some(w => w.level === 'error' && /competition period/.test(w.msg)));
+  assert.ok(!stops[1].warnings.some(w => /Repeat site/.test(w.msg)));
+  t.settings.rules.periodEnd = '';
+  t.settings.rules.periodStart = '';
+  assert.equal(compute(t).summary.uniqueCounted, 2);
+});

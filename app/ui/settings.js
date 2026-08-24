@@ -31,12 +31,15 @@ export function renderSettings(el, trip, db) {
     <h2>Contest rules</h2>
     <div class="grid2">
       ${num('Streak window', s('rules.windowH'), S.rules.windowH, { min: 1, max: 168, unit: 'h' })}
-      <label class="field">Timer anchor<select ${s('rules.anchor')}><option value="start" ${S.rules.anchor === 'start' ? 'selected' : ''}>previous session start (official)</option><option value="end" ${S.rules.anchor === 'end' ? 'selected' : ''}>previous session end</option></select></label>
+      <label class="field">Timer anchor<select ${s('rules.anchor')}><option value="start" ${S.rules.anchor === 'start' ? 'selected' : ''}>previous session start (category text, stricter)</option><option value="end" ${S.rules.anchor === 'end' ? 'selected' : ''}>previous session end (trip text, lenient)</option></select></label>
       ${num('Warn when margin below', s('rules.marginMin'), S.rules.marginMin, { min: 0, unit: 'min' })}
       ${num('Min session', s('rules.minSessionMin'), S.rules.minSessionMin, { min: 0, unit: 'min' })}
       ${num('Min session energy', s('rules.minSessionKwh'), S.rules.minSessionKwh, { min: 0, step: 0.5, unit: 'kWh' })}
       ${num('Charge at least', s('rules.minSessionPct'), S.rules.minSessionPct, { min: 0, max: 50, unit: '% per site, so a session registers' })}
+      <label class="field">Competition period start<input type="datetime-local" ${s('rules.periodStart')} value="${esc(S.rules.periodStart || '')}"></label>
+      <label class="field">Competition period end<input type="datetime-local" ${s('rules.periodEnd')} value="${esc(S.rules.periodEnd || '')}"></label>
     </div>
+    <p class="muted" style="margin:2px 0 0">Tesla's page says both "within 24 hours of the previous session's start time" and "within 24 hours of the end of your previous session"; plan with the stricter one.</p>
 
     <h2>Car</h2>
     <label class="field">Preset<select id="car-select">${carOpts}</select></label>

@@ -19,14 +19,20 @@ southern Europe (e.g. Barcelona / Madrid), and possibly back.
 ## 2. Contest rules encoded
 
 Source: https://www.tesla.com/support/tesla-app/charging-badges/contest (the page blocks
-automated fetches; rules below are as quoted by secondary write-ups — the owner should
-verify against the official page; every parameter is configurable in Settings).
+automated fetches; the owner pasted the official text on 2026-08-24 — every parameter is
+configurable in Settings).
 
-- **Longest Trip** = longest continuous streak of *unique* Supercharger sites where each
-  new site's charging session happens **within 24 hours of the previous session's start
-  time**.
+- **Longest Trip** = longest continuous streak of *unique* Supercharger sites where you
+  begin a charging session at each new site within **24 hours of the previous session**.
+  Tesla's page states the anchor both ways ("previous session's start time" in the category
+  definition, "end of your previous session at a different site" in the trip explanation);
+  the planner defaults to the stricter `start` anchor.
 - Repeat visits to an already-counted site are allowed; they neither reset the 24 h timer
   nor add to the trip length.
+- Sessions at any Supercharger worldwide count; the participant's region is where they
+  visited the most unique sites (ties: most kWh). Country exclusions apply to residents only.
+- Competition period: 2026-01-01 00:01 to 2026-12-31 23:59 local time (`rules.periodStart` /
+  `rules.periodEnd`); sessions outside are flagged and not counted.
 - A "site" is a distinct location as shown in the app / in-car navigation → only
   **Tesla Supercharger sites** count (no destination chargers, no third-party chargers).
 - Other categories tracked as counters: **Most Unique Sites** (per calendar year) and
@@ -35,8 +41,8 @@ verify against the official page; every parameter is configurable in Settings).
   ≥ 5 min and ≥ 1 kWh per counted session (configurable).
 
 Configurable rule parameters: window hours (24), timer anchor (`start` of previous counted
-session [official] or `end`), safety margin minutes before the deadline (60), minimum
-session minutes / kWh.
+session [stricter, default] or `end`), safety margin minutes before the deadline (60),
+minimum session minutes / kWh / percent, competition period start and end.
 
 ## 3. Non-goals
 
@@ -241,10 +247,9 @@ made from the browser; nothing is proxied.
 
 ## 13. Assumptions (to confirm)
 
-1. Rules quoted from secondary sources; the official page could not be fetched by script.
-2. Sites in countries excluded from EMEA *eligibility* (Italy, Portugal, Greece, Poland,
-   Romania, Iceland, Estonia, …) are assumed to still count as visited sites for a German
-   participant — the exclusion list reads as participant residency, not site location.
+1. Rules confirmed against the official page text (pasted by the owner); the page itself is
+   internally inconsistent about the timer anchor (start vs end of the previous session).
+2. Confirmed: sessions anywhere count; country exclusions concern residents only.
 3. Sentry drain defaults: 150 W (firmware ≥ 2024.38) ≈ 0.2 %/h (~5 %/day); parked with
    sentry off ≈ 0.04 %/h; ×1.3 below 0 °C.
 4. Car physics constants are tuned to public range tests; margin +5 % covers the in-car
