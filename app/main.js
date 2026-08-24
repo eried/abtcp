@@ -236,6 +236,8 @@ async function main() {
     $('counter-eta').textContent = trip.stops.length || trip.destination ? `${fmt.time(S.eta)} · ${fmt.pct(S.endSoc)}` : '–';
     if (S.minSoc < 0) dlEl.parentElement.className = 'counter';
     $('btn-export').disabled = false;
+    $('btn-undo').disabled = !store.canUndo();
+    $('btn-redo').disabled = !store.canRedo();
 
     sidebar.render(tl);
 
@@ -276,6 +278,24 @@ async function main() {
   if (restored && store.trip.stops.length) map.fitTo(sidebar.tripPoints()); else map.fitTo([[store.trip.start.lat, store.trip.start.lng]]);
 
   // ---------- header buttons ----------
+  // Pruning drops legs the current plan no longer uses, so a restored plan may need a few back.
+  const afterHistory = label => { paintSettings(); sidebar.buildMissing().then(() => sidebar.refreshCandidates(true)); toast.show(label); };
+  $('btn-undo').addEventListener('click', () => { if (store.undo()) afterHistory('Undo'); });
+  $('btn-redo').addEventListener('click', () => { if (store.redo()) afterHistory('Redo'); });
+  document.addEventListener('keydown', e => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const k = e.key.toLowerCase();
+    const typing = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+    if (k === 'z' && !e.shiftKey) {
+      if (typing) return;
+      e.preventDefault();
+      if (store.undo()) afterHistory('Undo');
+    } else if ((k === 'z' && e.shiftKey) || k === 'y') {
+      if (typing) return;
+      e.preventDefault();
+      if (store.redo()) afterHistory('Redo');
+    }
+  });
   $('btn-fit').addEventListener('click', () => map.fitTo(sidebar.tripPoints()));
   $('btn-recompute').addEventListener('click', async () => {
     setStatus('Re-routing…');

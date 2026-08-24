@@ -52,7 +52,7 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
       } finally {
         inflight.delete(key);
       }
-      store.update(t => { t.legs[key] = leg; });
+      store.updateQuiet(t => { t.legs[key] = leg; }); // route cache: never an undo step
       return leg;
     })();
     inflight.set(key, p);
@@ -95,7 +95,7 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
 
   /** Drop cached legs that no consecutive stop pair uses any more. */
   function pruneLegs() {
-    store.update(t => {
+    store.updateQuiet(t => {
       const keep = new Set();
       let prev = t.start;
       for (const s of t.stops) { keep.add(legKey(prev, s)); prev = s; }
@@ -303,15 +303,33 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
    * charge above `maxChargeSoc` — otherwise the next candidate is tried. Repeats on the newly
    * created gap, so one long leg can absorb several sites. Maximises unique sites per trip.
    */
-  async function densify({ maxDetourKm = 25, maxAdds = 25, maxChargeSoc = null, onProgress = null, shouldStop = () => false } = {}) {
+  async function densify({ maxDetourKm = 25, maxAdds = 25, maxChargeSoc = null, gapIndex = null, onProgress = null, shouldStop = () => false } = {}) {
     let added = 0;
-    let gap = 0;
+    let gap = gapIndex ?? 0;
+    // When scoped to one gap, follow the node that closed it: as sites are inserted the
+    // boundary shifts right, so both halves of the original gap keep getting filled.
+    let boundaryId = null;
+    let boundaryIsDest = false;
+    if (gapIndex != null) {
+      const t0 = store.trip;
+      const nodes0 = [t0.start, ...t0.stops, ...(t0.destination && t0.destination.lat != null ? [t0.destination] : [])];
+      const b0 = nodes0[gapIndex + 1];
+      if (!b0) return 0;
+      boundaryId = b0.id ?? null;
+      boundaryIsDest = !b0.id;
+    }
     while (added < maxAdds && !shouldStop()) {
       const trip = store.trip;
       const S = trip.settings;
       const cap = maxChargeSoc ?? S.maxChargeSoc ?? 90;
       const nodes = [trip.start, ...trip.stops, ...(trip.destination && trip.destination.lat != null ? [trip.destination] : [])];
-      if (gap >= nodes.length - 1) break;
+      let endGap = nodes.length - 1;
+      if (gapIndex != null) {
+        const bIdx = boundaryIsDest ? nodes.length - 1 : nodes.findIndex(n => n.id === boundaryId);
+        if (bIdx < 0) break;
+        endGap = bIdx;
+      }
+      if (gap >= endGap) break;
       const a = nodes[gap];
       const b = nodes[gap + 1];
       const cands = await gapCandidates(a, b, maxDetourKm);

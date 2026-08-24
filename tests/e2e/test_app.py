@@ -336,6 +336,25 @@ def test_plan_export_import(page, url, log):
         page.evaluate("window.__abtcp.sidebar.removeStop(window.__abtcp.store.trip.stops.at(-1).id)")
     wait_legs(page)
 
+    # --- per-gap fill: the ⊕ button on a card only touches that leg
+    n0 = page.locator(".stop[data-id]").count()
+    set_value(page, "#densify-km", "120")
+    page.click('.stop[data-index="1"] [data-act="fillgap"]')
+    page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length > {n0}", timeout=60000)
+    wait_legs(page)
+    n1 = page.locator(".stop[data-id]").count()
+    assert page.evaluate("window.__abtcp.timeline.stops.every(r => r.leg.status === 'ok')")
+
+    # --- undo / redo restores the previous plan
+    page.click("#btn-undo")
+    page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length === {n0}", timeout=15000)
+    page.click("#btn-redo")
+    page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length === {n1}", timeout=15000)
+    page.click("#btn-undo")
+    page.wait_for_function(f"document.querySelectorAll('.stop[data-id]').length === {n0}", timeout=15000)
+    wait_legs(page)
+    assert page.evaluate("document.querySelector('#btn-undo').disabled") is False
+
     # --- day separators appear where the plan crosses midnight (30 h rest)
     seps = page.eval_on_selector_all(".day-sep span", "els => els.map(e => e.textContent)")
     assert len(seps) >= 1, "a Day divider after the 30 h rest"

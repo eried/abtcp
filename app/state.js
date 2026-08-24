@@ -106,19 +106,72 @@ export function deserialize(text) {
 }
 
 /** Observable store with autosave. `storage` needs getItem/setItem/removeItem (localStorage-like). */
-export function createStore({ storage = globalThis.localStorage ?? null, key = STORAGE_KEY, trip = null } = {}) {
+export function createStore({ storage = globalThis.localStorage ?? null, key = STORAGE_KEY, trip = null, historyLimit = 60, coalesceMs = 500, now = () => Date.now() } = {}) {
   let current = trip || defaultTrip();
   const subs = new Set();
   const emit = () => { for (const fn of subs) fn(current); };
+  // History holds everything except `legs` (a coordinate-keyed route cache that is reattached
+  // on undo, so stepping back never triggers a re-route).
+  const undoStack = [];
+  const redoStack = [];
+  let lastPush = 0;
+  const snap = t => JSON.stringify({ ...t, legs: undefined });
+  const restore = text => {
+    const legs = current.legs;
+    const obj = JSON.parse(text);
+    obj.legs = legs;
+    return migrate(obj);
+  };
+  let batching = 0;
+  const pushHistory = () => {
+    if (batching > 0) return; // inside a batch the entry was taken before the first change
+    const text = snap(current);
+    const t = now();
+    if (undoStack.length && t - lastPush < coalesceMs) undoStack[undoStack.length - 1] = undoStack[undoStack.length - 1];
+    else {
+      undoStack.push(text);
+      if (undoStack.length > historyLimit) undoStack.shift();
+    }
+    lastPush = t;
+    redoStack.length = 0;
+  };
   const save = () => {
     if (!storage) return false;
     try { storage.setItem(key, serialize(current)); return true; } catch { return false; }
   };
   return {
     get trip() { return current; },
-    update(fn) { fn(current); current.meta.updatedAt = new Date().toISOString(); save(); emit(); },
-    replace(t) { current = migrate(t); save(); emit(); },
-    reset() { current = defaultTrip(); save(); emit(); },
+    update(fn) { pushHistory(); fn(current); current.meta.updatedAt = new Date().toISOString(); save(); emit(); },
+    /** Mutate without touching the history — for the route cache, which is not user state. */
+    updateQuiet(fn) { fn(current); save(); emit(); },
+    /** Group a whole user action (auto-chain, fill gaps, add/remove stop) into one undo step. */
+    async batch(fn) {
+      if (batching === 0) { pushHistory(); lastPush = now() + 1e9; } // block coalescing inside
+      batching++;
+      try { return await fn(); } finally { batching--; if (batching === 0) lastPush = 0; }
+    },
+    replace(t) { pushHistory(); current = migrate(t); save(); emit(); },
+    reset() { pushHistory(); current = defaultTrip(); save(); emit(); },
+    canUndo() { return undoStack.length > 0; },
+    canRedo() { return redoStack.length > 0; },
+    undo() {
+      if (!undoStack.length) return false;
+      redoStack.push(snap(current));
+      current = restore(undoStack.pop());
+      lastPush = 0;
+      save();
+      emit();
+      return true;
+    },
+    redo() {
+      if (!redoStack.length) return false;
+      undoStack.push(snap(current));
+      current = restore(redoStack.pop());
+      lastPush = 0;
+      save();
+      emit();
+      return true;
+    },
     subscribe(fn) { subs.add(fn); return () => subs.delete(fn); },
     save,
     load() {

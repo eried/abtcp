@@ -72,3 +72,67 @@ test('toLocalIso formats local time and migrate tolerates bad fields', () => {
   const t = migrate({ version: 1, stops: 'nope', legs: 3, destination: 'x', visitedBefore: 'y' });
   assert.deepEqual(t.stops, []); assert.deepEqual(t.legs, {}); assert.equal(t.destination, null); assert.deepEqual(t.visitedBefore, []);
 });
+
+test('undo/redo walks the history and keeps the leg cache', () => {
+  const storage = memStorage();
+  let clock = 0;
+  const store = createStore({ storage, trip: defaultTrip(new Date(2026, 0, 1)), now: () => (clock += 1000) });
+  assert.equal(store.canUndo(), false);
+  assert.equal(store.undo(), false);
+  store.update(t => { t.stops.push(newStop({ lat: 1, lng: 2, name: 'A' })); t.legs['x'] = { status: 'ok' }; });
+  store.update(t => { t.stops.push(newStop({ lat: 3, lng: 4, name: 'B' })); });
+  assert.equal(store.trip.stops.length, 2);
+  assert.equal(store.canUndo(), true);
+  assert.equal(store.undo(), true);
+  assert.deepEqual(store.trip.stops.map(s => s.name), ['A']);
+  assert.deepEqual(store.trip.legs, { x: { status: 'ok' } }, 'route cache survives undo');
+  assert.equal(store.undo(), true);
+  assert.equal(store.trip.stops.length, 0);
+  assert.equal(store.canUndo(), false);
+  assert.equal(store.canRedo(), true);
+  assert.equal(store.redo(), true);
+  assert.deepEqual(store.trip.stops.map(s => s.name), ['A']);
+  assert.equal(store.redo(), true);
+  assert.deepEqual(store.trip.stops.map(s => s.name), ['A', 'B']);
+  assert.equal(store.redo(), false);
+  store.update(t => { t.meta.name = 'branch'; });
+  assert.equal(store.canRedo(), false, 'a new edit clears the redo branch');
+});
+
+test('rapid edits coalesce into one undo step and history is capped', () => {
+  let clock = 0;
+  const fast = createStore({ storage: null, trip: defaultTrip(new Date(2026, 0, 1)), now: () => clock });
+  fast.update(t => { t.start.soc = 80; });
+  clock += 100;
+  fast.update(t => { t.start.soc = 70; });
+  clock += 100;
+  fast.update(t => { t.start.soc = 60; });
+  fast.undo();
+  assert.equal(fast.trip.start.soc, 90, 'a slider drag is a single undo step');
+  const capped = createStore({ storage: null, trip: defaultTrip(new Date(2026, 0, 1)), historyLimit: 3, coalesceMs: 0, now: () => (clock += 1000) });
+  for (let i = 0; i < 6; i++) capped.update(t => { t.start.soc = 50 + i; });
+  let steps = 0;
+  while (capped.undo()) steps++;
+  assert.equal(steps, 3, 'history capped at historyLimit');
+});
+
+test('batch groups a whole action into one undo step; updateQuiet stays out of history', async () => {
+  let clock = 0;
+  const store = createStore({ storage: null, trip: defaultTrip(new Date(2026, 0, 1)), coalesceMs: 0, now: () => (clock += 1000) });
+  await store.batch(async () => {
+    store.update(t => { t.stops.push(newStop({ lat: 1, lng: 1, name: 'A' })); });
+    store.updateQuiet(t => { t.legs['k1'] = { status: 'ok' }; });
+    store.update(t => { t.stops.push(newStop({ lat: 2, lng: 2, name: 'B' })); });
+    store.update(t => { t.stops[0].charge = { targetSoc: 80 }; });
+  });
+  assert.equal(store.trip.stops.length, 2);
+  assert.equal(store.undo(), true);
+  assert.equal(store.trip.stops.length, 0, 'one undo reverts the whole batch');
+  assert.equal(store.canUndo(), false, 'the batch produced exactly one entry');
+  assert.equal(store.redo(), true);
+  assert.equal(store.trip.stops.length, 2);
+  const before = store.canUndo();
+  store.updateQuiet(t => { t.legs['k2'] = { status: 'ok' }; });
+  assert.equal(store.canUndo(), before, 'a cache write adds no history entry');
+  assert.equal(store.trip.legs.k2.status, 'ok');
+});
