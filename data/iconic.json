@@ -1,0 +1,9 @@
+[
+  { "_comment": "Community list of Iconic Charger badge sites (Tesla app → Charging Badges → Iconic Chargers). Tesla only reveals the full list in the app; publicly confirmed so far: Tesla Diner, Gigafactory Berlin, Grand Canyon, Yosemite, plus first-in-country/flagship sites. Match entries by supercharge.info `id`, Tesla `tid`, or a unique `match` name substring, with a `badge` label. Extend this file as more badges become known." },
+  { "id": 4272, "badge": "Tesla Diner (Hollywood)" },
+  { "id": 2547, "badge": "Gigafactory Berlin-Brandenburg" },
+  { "id": 2027, "badge": "Grand Canyon (Tusayan)" },
+  { "id": 3380, "badge": "Yosemite (El Portal)" },
+  { "id": 116, "badge": "Harris Ranch — one of the world's largest Superchargers" },
+  { "id": 226, "badge": "Lyngdal — among Europe's first Superchargers (2013)" }
+]

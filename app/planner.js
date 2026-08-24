@@ -78,6 +78,18 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
         if (onProgress) onProgress(i + 1, count);
       }
     }
+    const trip = store.trip;
+    if (trip.destination && trip.destination.lat != null) {
+      const prev = trip.stops.length ? trip.stops[trip.stops.length - 1] : trip.start;
+      const key = legKey(prev, trip.destination);
+      const cur = trip.legs[key];
+      if (force || !cur || cur.status !== 'ok') {
+        const tl = compute(trip);
+        const departTime = tl.stops.length ? tl.stops[tl.stops.length - 1].depart : tl.startTime;
+        await buildLeg(prev, trip.destination, { force, departTime });
+        built++;
+      }
+    }
     return built;
   }
 
@@ -87,6 +99,7 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
       const keep = new Set();
       let prev = t.start;
       for (const s of t.stops) { keep.add(legKey(prev, s)); prev = s; }
+      if (t.destination && t.destination.lat != null) keep.add(legKey(prev, t.destination));
       for (const k of Object.keys(t.legs)) if (!keep.has(k)) delete t.legs[k];
     });
   }
@@ -105,14 +118,15 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
    * Rank unvisited usable sites near the current end of the trip by real road distance.
    * → [{ site, distM, roadKm, roadH, kwh, arrivalSoc, progressKm }]
    */
-  async function candidates({ from = null, fromSoc = null, limit = null, toward = null, maxKm = null, n = 60 } = {}) {
+  async function candidates({ from = null, fromSoc = null, limit = null, toward = null, maxKm = null, n = 60, destOverride = null } = {}) {
     const trip = store.trip;
     const S = trip.settings;
+    const visitedYear = new Set((trip.visitedBefore || []).map(Number));
     const tl = compute(trip);
     const last = tl.stops[tl.stops.length - 1];
     const origin = from || (last ? last.stop : trip.start);
     const soc = fromSoc ?? (last ? last.departSoc : +trip.start.soc);
-    const dest = trip.destination;
+    const dest = destOverride || trip.destination;
     const useToward = (toward ?? S.candidates.toward) && !!dest;
     const inTrip = new Set(trip.stops.map(s => s.siteId).filter(x => x != null));
     const maxM = (maxKm ?? S.candidates.maxKm ?? 400) * 1000;
@@ -140,46 +154,63 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
       if (m == null || s == null) return;
       const roadKm = m / 1000;
       const kwh = roadKm * whKm / 1000;
-      out.push({ ...c, roadKm, roadH: s / 3600, kwh, arrivalSoc: soc - kwh / trip.car.usableKwh * 100, whKm });
+      out.push({ ...c, roadKm, roadH: s / 3600, kwh, arrivalSoc: soc - kwh / trip.car.usableKwh * 100, whKm, visitedYear: visitedYear.has(c.site.id) });
     });
-    out.sort((a, b) => a.roadKm - b.roadKm);
+    out.sort((a, b) => (a.visitedYear - b.visitedYear) || (a.roadKm - b.roadKm));
     return out.slice(0, limit ?? S.candidates.limit);
   }
 
   /**
-   * Greedy chain: repeatedly append the nearest candidate (toward the destination when set),
-   * building its real leg. If the car would arrive below reserve, the previous stop's charge
-   * target is raised to what is needed (adaptive), otherwise the candidate is dropped.
+   * Greedy chain. Append mode (default): repeatedly add the nearest candidate toward the
+   * destination, building real legs; raises the previous stop's charge target when a hop
+   * needs more (adaptive). Insert mode (`beforeId`): insert intermediate chargers before the
+   * given stop until it is reachable above the reserve — "fill the gap" to a too-far charger.
    */
-  async function autoChain({ n = 5, targetSoc = null, toward = null, adaptive = true, onProgress = null, shouldStop = () => false } = {}) {
+  async function autoChain({ n = 5, targetSoc = null, toward = null, adaptive = true, onProgress = null, shouldStop = () => false, beforeId = null } = {}) {
     let added = 0;
     for (let k = 0; k < n; k++) {
       if (shouldStop()) break;
       const trip = store.trip;
       const S = trip.settings;
       const target = targetSoc ?? S.defaultTargetSoc;
-      const dest = trip.destination;
+      const idxT = beforeId == null ? -1 : trip.stops.findIndex(s => s.id === beforeId);
+      if (beforeId != null && idxT < 0) break;
+      const targetStop = idxT >= 0 ? trip.stops[idxT] : null;
       const tl0 = compute(trip);
-      const last = tl0.stops[tl0.stops.length - 1];
-      const origin = last ? last.stop : trip.start;
-      if (dest && haversineM(origin.lat, origin.lng, dest.lat, dest.lng) < 30000) break;
-      let cands = await candidates({ toward, limit: 6 });
-      if (!cands.length && (toward ?? S.candidates.toward) && dest) cands = await candidates({ toward: false, limit: 6 }); // dead end: allow any new site
+      const originRes = targetStop ? (idxT > 0 ? tl0.stops[idxT - 1] : null) : (tl0.stops[tl0.stops.length - 1] || null);
+      const origin = originRes ? originRes.stop : trip.start;
+      const originSoc = originRes ? originRes.departSoc : +trip.start.soc;
+      if (targetStop) {
+        const tRes = tl0.stops[idxT];
+        if (tRes.leg.status === 'ok' && tRes.arrivalSoc >= S.reserveSoc) break; // gap closed
+      } else {
+        const dest = trip.destination;
+        if (dest && haversineM(origin.lat, origin.lng, dest.lat, dest.lng) < 30000) break;
+      }
+      const destOverride = targetStop ? { lat: targetStop.lat, lng: targetStop.lng } : null;
+      let cands = await candidates({ from: origin, fromSoc: originSoc, toward: targetStop ? true : toward, destOverride, limit: 6 });
+      if (!cands.length && targetStop) cands = await candidates({ from: origin, fromSoc: originSoc, toward: false, destOverride, limit: 6 });
+      else if (!cands.length && (toward ?? S.candidates.toward) && trip.destination) cands = await candidates({ from: origin, fromSoc: originSoc, toward: false, limit: 6 }); // dead end: allow any new site
       let placed = false;
       for (const c of cands.slice(0, 4)) {
         if (c.arrivalSoc < S.reserveSoc - 15) continue;
+        if (targetStop && c.site.id === targetStop.siteId) continue;
         const stop = newStop({ site: c.site, targetSoc: target });
-        store.update(t => { t.stops.push(stop); });
+        const insertAt = idxT >= 0 ? idxT : store.trip.stops.length;
+        store.update(t => { t.stops.splice(insertAt, 0, stop); });
         const tl1 = compute(store.trip);
-        const departTime = tl1.stops.length > 1 ? tl1.stops[tl1.stops.length - 2].depart : tl1.startTime;
+        const departTime = insertAt > 0 ? tl1.stops[insertAt - 1].depart : tl1.startTime;
         const leg = await buildLeg(origin, stop, { departTime });
-        let res = compute(store.trip).stops.at(-1);
+        if (targetStop && leg.status === 'ok') {
+          const tl2 = compute(store.trip);
+          await buildLeg(stop, targetStop, { departTime: tl2.stops[insertAt].depart });
+        }
+        let res = compute(store.trip).stops[insertAt];
         if (leg.status === 'ok' && res.arrivalSoc < S.reserveSoc && adaptive) {
-          const idx = store.trip.stops.length - 2;
           const need = Math.min(100, Math.ceil(res.leg.kwh / store.trip.car.usableKwh * 100 + S.reserveSoc + 2));
-          if (idx >= 0 && store.trip.stops[idx].charge) store.update(t => { t.stops[idx].charge.targetSoc = Math.max(t.stops[idx].charge.targetSoc, need); });
-          else if (idx < 0) store.update(t => { t.start.soc = Math.max(t.start.soc, need); });
-          res = compute(store.trip).stops.at(-1);
+          if (insertAt >= 1 && store.trip.stops[insertAt - 1].charge) store.update(t => { t.stops[insertAt - 1].charge.targetSoc = Math.max(t.stops[insertAt - 1].charge.targetSoc, need); });
+          else if (insertAt === 0) store.update(t => { t.start.soc = Math.max(t.start.soc, need); });
+          res = compute(store.trip).stops[insertAt];
         }
         if (leg.status === 'ok' && res.arrivalSoc >= S.reserveSoc) {
           placed = true;

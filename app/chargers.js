@@ -47,6 +47,23 @@ export class ChargerDB {
   }
 }
 
+/** Tag sites with Iconic Charger badges (community list in data/iconic.json). */
+export function applyIconic(db, list) {
+  let n = 0;
+  for (const entry of list || []) {
+    let site = null;
+    if (entry.id != null) site = db.byId(entry.id);
+    if (!site && entry.tid) site = db.sites.find(s => s.tid === entry.tid);
+    if (!site && entry.match) {
+      const needle = entry.match.toLowerCase();
+      const hits = db.sites.filter(s => s.name.toLowerCase().includes(needle));
+      if (hits.length === 1) site = hits[0];
+    }
+    if (site) { site.iconic = entry.badge; n++; }
+  }
+  return n;
+}
+
 export async function loadChargers(url = 'data/chargers.json', fetchImpl = globalThis.fetch) {
   const r = await fetchImpl(url);
   if (!r.ok) throw new Error(`Could not load ${url}: HTTP ${r.status}`);

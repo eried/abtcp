@@ -209,3 +209,25 @@ test('sessions outside the competition period are flagged and not counted', () =
   t.settings.rules.periodStart = '';
   assert.equal(compute(t).summary.uniqueCounted, 2);
 });
+
+test('destination is routed as a final leg with ETA, minUseful and warnings', () => {
+  const t = trip({ stops: [newStop({ site: A, targetSoc: 80 })], legs: [{ km: 100 }] });
+  t.destination = { lat: 68.0, lng: 17.0, name: 'Home' };
+  t.legs[legKey(A, t.destination)] = mkLeg(A, t.destination, 150, {});
+  const { destination, summary, stops } = compute(t);
+  assert.equal(destination.leg.status, 'ok');
+  assert.ok(destination.arrivalSoc < 80 && destination.arrivalSoc > 40, `soc ${destination.arrivalSoc}`);
+  assert.equal(summary.eta, destination.arrival);
+  assert.ok(Math.abs(summary.endSoc - destination.arrivalSoc) < 1e-9);
+  assert.equal(summary.totalKm, 250);
+  assert.ok(stops[0].minUsefulSoc > 10, 'last stop minUseful covers the final leg');
+  const t2 = trip({ stops: [newStop({ site: A, targetSoc: 30 })], legs: [{ km: 100 }] });
+  t2.destination = { lat: 68.0, lng: 17.0, name: 'Home' };
+  t2.legs[legKey(A, t2.destination)] = mkLeg(A, t2.destination, 500, {});
+  const r2 = compute(t2);
+  assert.ok(r2.destination.arrivalSoc < 0);
+  assert.ok(r2.summary.warnings.some(w => /Unreachable/.test(w.msg)));
+  delete t2.legs[legKey(A, t2.destination)];
+  assert.equal(compute(t2).destination.leg.status, 'pending');
+  assert.equal(compute(trip({ stops: [], legs: [] })).destination, null);
+});

@@ -260,6 +260,30 @@ def test_plan_export_import(page, url, log):
     assert "Narvik" in page.locator('.stop[data-index="1"]').text_content()
     assert page.evaluate("window.__abtcp.timeline.summary.uniqueCounted") == 2
 
+    # --- destination routed as a final leg + roundtrip
+    page.evaluate("window.__abtcp.sidebar.setDestination({ lat: 68.4385, lng: 17.4272, name: 'Narvik town' })")
+    page.wait_for_selector("#dest-card", timeout=15000)
+    wait_legs(page)
+    dest_txt = page.text_content("#dest-card")
+    assert "Arrive" in dest_txt and "Narvik town" in dest_txt, dest_txt
+    assert page.text_content("#counter-eta") != "–"
+    page.click("#btn-roundtrip")
+    page.wait_for_function("document.querySelector('#dest-card') && document.querySelector('#dest-card').textContent.includes('Back to')", timeout=15000)
+    wait_legs(page)
+
+    # --- a real mouse click on a canvas dot opens the popup and adds the site
+    t2 = page.evaluate("""() => { const a = window.__abtcp; const s = a.db.search('Mo i Rana', 3).find(x => a.db.isUsable(x));
+      a.map.map.setView([s.lat, s.lng], 9, { animate: false });
+      const r = document.getElementById('map').getBoundingClientRect();
+      const p = a.map.map.latLngToContainerPoint([s.lat, s.lng]);
+      return { x: r.left + p.x, y: r.top + p.y, name: s.name }; }""")
+    page.mouse.click(t2["x"], t2["y"])
+    page.wait_for_selector(".leaflet-popup [data-act=\'add\']", timeout=5000)
+    assert t2["name"] in page.text_content(".leaflet-popup .popup")
+    page.click(".leaflet-popup [data-act=\'add\']")
+    page.wait_for_function("document.querySelectorAll(\'.stop[data-id]\').length === 3", timeout=20000)
+    wait_legs(page)
+
     assert not errors, errors
     page.screenshot(path=str(OUT / "final.png"))
 

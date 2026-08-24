@@ -132,3 +132,36 @@ test('ensureLegs builds only missing legs in order and pruneLegs drops orphans',
   planner.pruneLegs();
   assert.equal(Object.keys(store.trip.legs).length, 0);
 });
+
+test('autoChain with beforeId fills the gap to a too-far stop', async () => {
+  const { store, planner } = setup();
+  store.update(t => { t.start.soc = 30; t.stops.push(newStop({ site: SITES[3], targetSoc: 60 })); });
+  await planner.ensureLegs();
+  const before = compute(store.trip).stops.at(-1);
+  assert.ok(before.arrivalSoc < 10, `precondition unreachable, got ${before.arrivalSoc}`);
+  const added = await planner.autoChain({ n: 6, beforeId: store.trip.stops[0].id });
+  assert.ok(added >= 1, `added ${added}`);
+  const tl = compute(store.trip);
+  assert.equal(tl.stops.at(-1).stop.name, 'Narvik');
+  tl.stops.forEach(r => { assert.equal(r.leg.status, 'ok'); assert.ok(r.arrivalSoc >= 10, `${r.stop.name} at ${r.arrivalSoc}`); });
+});
+
+test('candidates prefer sites not visited this year and ensureLegs builds the destination leg', async () => {
+  const { store, planner } = setup();
+  store.update(t => { t.visitedBefore = [1]; });
+  const cands = await planner.candidates({ toward: false, limit: 10 });
+  const iSk = cands.findIndex(c => c.site.id === 1);
+  const iFi = cands.findIndex(c => c.site.id === 2);
+  assert.ok(iSk >= 0 && iFi >= 0 && iSk > iFi, `visited Skibotn at ${iSk}, Finnsnes at ${iFi}`);
+  assert.equal(cands[iSk].visitedYear, true);
+  assert.equal(cands[iFi].visitedYear, false);
+  store.update(t => { t.destination = { lat: 68.4385, lng: 17.4272, name: 'Narvik town' }; });
+  await planner.ensureLegs();
+  const tl = compute(store.trip);
+  assert.ok(tl.destination, 'destination result exists');
+  assert.equal(tl.destination.leg.status, 'ok');
+  assert.ok(tl.destination.arrivalSoc < 90);
+  store.update(t => { t.destination = null; });
+  planner.pruneLegs();
+  assert.equal(Object.keys(store.trip.legs).length, 0);
+});

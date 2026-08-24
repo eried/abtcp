@@ -25,7 +25,7 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
   }
   setTiles(tiles);
 
-  const renderer = L.canvas({ padding: 0.5 });
+  const renderer = L.canvas({ padding: 0.5, tolerance: 5 });
   const siteLayer = L.layerGroup().addTo(map);
   const routeLayer = L.layerGroup().addTo(map);
   const candLayer = L.layerGroup().addTo(map);
@@ -33,8 +33,15 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
   const handlers = {};
   const on = (ev, fn) => { (handlers[ev] ||= []).push(fn); };
   const emit = (ev, data) => (handlers[ev] || []).forEach(fn => fn(data));
-  const markers = new Map(); // site id → { marker, cls }
+  const markers = new Map(); // site id → { marker, cls, site }
   let popupHtml = () => '';
+  const radiusScale = z => (z >= 10 ? 1.6 : z >= 8 ? 1.35 : z >= 6 ? 1.1 : 1);
+  const applyStyle = entry => {
+    const st = STYLE[entry.cls];
+    entry.marker.setStyle(st);
+    entry.marker.setRadius(st.radius * radiusScale(map.getZoom()));
+  };
+  map.on('zoomend', () => { for (const entry of markers.values()) applyStyle(entry); });
 
   function setSites(sites, classify, popupFn) {
     popupHtml = popupFn || popupHtml;
@@ -43,9 +50,11 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
     for (const s of sites) {
       const cls = classify(s);
       const m = L.circleMarker([s.lat, s.lng], { renderer, ...STYLE[cls] });
+      m.setRadius(STYLE[cls].radius * radiusScale(map.getZoom()));
       m.bindPopup(() => popupHtml(s), { maxWidth: 300, autoPanPadding: [40, 40] });
       m.on('click', () => emit('siteClick', { site: s }));
       m.addTo(siteLayer);
+      if (s.iconic) L.circleMarker([s.lat, s.lng], { renderer, radius: 8.5, color: '#eab308', weight: 2, fill: false, opacity: 0.95, interactive: false }).addTo(siteLayer);
       markers.set(s.id, { marker: m, cls, site: s });
     }
   }
@@ -54,7 +63,7 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
   function restyle(classify) {
     for (const entry of markers.values()) {
       const cls = classify(entry.site);
-      if (cls !== entry.cls) { entry.cls = cls; entry.marker.setStyle(STYLE[cls]); }
+      if (cls !== entry.cls) { entry.cls = cls; applyStyle(entry); }
     }
   }
 
@@ -62,7 +71,7 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
     routeLayer.clearLayers();
     for (const leg of legs) {
       if (!leg.latlngs || leg.latlngs.length < 2) continue;
-      L.polyline(leg.latlngs, { color: leg.color, weight: 4, opacity: 0.85, renderer }).addTo(routeLayer);
+      L.polyline(leg.latlngs, { color: leg.color, weight: 4, opacity: 0.85, renderer, interactive: false }).addTo(routeLayer);
     }
   }
 
@@ -72,7 +81,9 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
     stopLayer.clearLayers();
     if (start) L.marker([start.lat, start.lng], { icon: divIcon('start', 'S'), zIndexOffset: 900 }).bindTooltip(start.name || 'Start').addTo(stopLayer);
     stops.forEach((s, i) => {
-      L.marker([s.lat, s.lng], { icon: divIcon(s.cls || '', String(i + 1)), zIndexOffset: 1000 + i }).bindTooltip(s.tooltip || s.name).addTo(stopLayer);
+      const m = L.marker([s.lat, s.lng], { icon: divIcon(s.cls || '', String(i + 1)), zIndexOffset: 1000 + i }).bindTooltip(s.tooltip || s.name);
+      m.on('click', () => emit('stopClick', { siteId: s.siteId ?? null, index: i }));
+      m.addTo(stopLayer);
     });
     if (destination) L.marker([destination.lat, destination.lng], { icon: divIcon('dest', 'D'), zIndexOffset: 950 }).bindTooltip(destination.name || 'Destination').addTo(stopLayer);
   }
@@ -80,7 +91,7 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
   function setCandidates(cands) {
     candLayer.clearLayers();
     for (const c of cands) {
-      L.circleMarker([c.site.lat, c.site.lng], { renderer, radius: 10, color: '#2563eb', weight: 2, fill: false, opacity: 0.9 }).addTo(candLayer);
+      L.circleMarker([c.site.lat, c.site.lng], { renderer, radius: 10, color: '#2563eb', weight: 2, fill: false, opacity: 0.9, interactive: false }).addTo(candLayer);
     }
   }
 
@@ -91,9 +102,10 @@ export function createMap({ el, tiles = 'osm', center = [62, 14], zoom = 4 }) {
   }
 
   function openSite(id) {
-    const e = markers.get(id);
+    const e = markers.get(Number(id));
     if (!e) return;
-    map.setView(e.marker.getLatLng(), Math.max(map.getZoom(), 9));
+    const ll = e.marker.getLatLng();
+    if (!map.getBounds().contains(ll)) map.setView(ll, Math.max(map.getZoom(), 9));
     e.marker.openPopup();
   }
 

@@ -202,6 +202,13 @@ since the last session" display.
   target when the hop needs more (adaptive); if nothing is reachable toward the
   destination it retries without the filter; stops when `n` reached, the destination is
   within 30 km, or nothing is reachable.
+- `autoChain({ beforeId })` (insert mode): inserts intermediate sites before the given stop
+  until it arrives above the reserve — the "fill the gap to a too-far charger" action.
+- The destination is routed as a final leg: `timeline.compute` returns a `destination`
+  result (arrival, SoC, warnings), `ensureLegs`/`pruneLegs` cover the final leg, the UI
+  shows a "D" card and "↩ roundtrip" sets the destination back to the start. Candidates
+  carry `visitedYear` (sorted after unvisited) and sites tagged via `data/iconic.json`
+  show a 🏅 Iconic Charger badge.
 - Request throttling: max 4 concurrent OSRM calls, ≥ 120 ms spacing; one retry.
 
 ## 10. UI (`index.html`, `app/ui/*`)

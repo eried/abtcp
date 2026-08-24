@@ -38,6 +38,9 @@ never below your reserve, never past the deadline.
 - Elevation from a DEM (Valhalla, smoothed), weather from forecasts (≤ 16 days) or last year's archive.
 - Charging curve for the Model Y LR capped by site power (V2 = 150 kW), plug-in overhead, losses.
 - Rest / sleep stops with Sentry-mode drain; waypoints with hotel AC charging.
+- Destination routed and timed as the final leg, with one-click **↩ roundtrip**; **⛽ Insert stops
+  before** fills the gap to a too-far charger; suggestions prefer sites you haven't visited this
+  year; 🏅 Iconic Charger badge sites are marked (community list in `data/iconic.json`).
 - Per-stop streak timer ("+13h20 since last session · 10h40 left"), header deadline, warnings.
 - "Next stop" ranking by road distance with a toward-destination filter (progress measured by
   road distance, so peninsulas that look close are not traps), and greedy

@@ -1,5 +1,5 @@
 // Bootstrap: load the charger DB, restore the trip, wire services, map, sidebar and settings.
-import { loadChargers, USABLE_STATUSES, STATUS_LABEL } from './chargers.js';
+import { loadChargers, applyIconic, USABLE_STATUSES, STATUS_LABEL } from './chargers.js';
 import { createStore, deserialize, serialize } from './state.js';
 import { compute, legKey } from './model/timeline.js';
 import { routeLatLngs } from './model/geo.js';
@@ -32,6 +32,10 @@ async function main() {
     setStatus('No database');
     return;
   }
+  try {
+    const ir = await fetch('data/iconic.json');
+    if (ir.ok) applyIconic(db, await ir.json());
+  } catch { /* the iconic list is optional */ }
   setStatus('');
 
   const routeQueue = createQueue({ maxConcurrent: 3, spacingMs: 150 });
@@ -58,14 +62,13 @@ async function main() {
     const t = store.trip;
     const isIn = t.stops.some(s => s.siteId === site.id);
     const visited = (t.visitedBefore || []).includes(site.id);
-    return `<div class="popup"><b>${esc(site.name)}</b>
+    return `<div class="popup"><b>${site.iconic ? '🏅 ' : ''}${esc(site.name)}</b>
       <div class="meta">${esc(STATUS_LABEL[site.status] || site.status)} · ${site.stalls} stalls · ${site.kw || '?'} kW${site.gen ? ` · ${site.gen.toUpperCase()}` : ''}${site.opened ? ` · opened ${esc(site.opened)}` : ''}</div>
+      ${site.iconic ? `<div class="meta">🏅 Iconic charger badge: ${esc(site.iconic)}</div>` : ''}
       ${site.tid ? `<a href="https://www.tesla.com/findus/location/supercharger/${encodeURIComponent(site.tid)}" target="_blank" rel="noopener">tesla.com ↗</a>` : ''}
       <div class="popup-actions">
-        <button data-act="add" data-site="${site.id}" class="primary">${isIn ? 'Add again' : 'Add as next stop'}</button>
-        <button data-act="start" data-site="${site.id}">Set as start</button>
-        <button data-act="dest" data-site="${site.id}">Set as destination</button>
-        <button data-act="visited" data-site="${site.id}">${visited ? 'Unmark visited' : 'Visited this year'}</button>
+        <button data-act="add" data-site="${site.id}" class="primary">${isIn ? 'Add again (repeat, for charge only)' : 'Add as next stop'}</button>
+        <button data-act="visited" data-site="${site.id}" title="Affects the yearly unique-sites counter and suggestion order">${visited ? 'Unmark visited this year' : 'Visited earlier this year'}</button>
       </div></div>`;
   };
   function loadSites() {
@@ -74,12 +77,11 @@ async function main() {
   }
   loadSites();
 
+  map.on('stopClick', ({ siteId }) => { if (siteId != null) map.openSite(siteId); });
   map.on('siteAction', ({ act, siteId }) => {
     const site = db.byId(siteId);
     if (!site) return;
     if (act === 'add') sidebar.addStop(site);
-    else if (act === 'start') { sidebar.setStart({ lat: site.lat, lng: site.lng, name: site.name }); map.fitTo(sidebar.tripPoints()); }
-    else if (act === 'dest') { sidebar.setDestination({ lat: site.lat, lng: site.lng, name: site.name }); render(); }
     else if (act === 'visited') {
       store.update(t => { const set = new Set(t.visitedBefore); if (set.has(site.id)) set.delete(site.id); else set.add(site.id); t.visitedBefore = [...set]; });
       map.closePopup();
@@ -131,7 +133,7 @@ async function main() {
     $('counter-km').textContent = fmt.km(S.totalKm);
     $('counter-time').textContent = fmt.h(S.totalTimeH);
     $('counter-kwh').textContent = fmt.kwh(S.kwhBilled);
-    $('counter-eta').textContent = trip.stops.length ? `${fmt.time(S.eta)} · ${fmt.pct(S.endSoc)}` : '–';
+    $('counter-eta').textContent = trip.stops.length || trip.destination ? `${fmt.time(S.eta)} · ${fmt.pct(S.endSoc)}` : '–';
     if (S.minSoc < 0) dlEl.parentElement.className = 'counter';
     $('btn-export').disabled = false;
 
@@ -146,10 +148,19 @@ async function main() {
       const color = r.arrivalSoc >= trip.settings.reserveSoc + 15 ? '#16a34a' : r.arrivalSoc >= trip.settings.reserveSoc ? '#f59e0b' : '#dc2626';
       return { latlngs, color };
     });
+    if (trip.destination && tl.destination && tl.destination.leg.status === 'ok') {
+      const lastStop = trip.stops.length ? trip.stops[trip.stops.length - 1] : trip.start;
+      const dleg = trip.legs[legKey(lastStop, trip.destination)];
+      if (dleg && dleg.status === 'ok') {
+        const soc = tl.destination.arrivalSoc;
+        const color = soc >= trip.settings.reserveSoc + 15 ? '#16a34a' : soc >= trip.settings.reserveSoc ? '#f59e0b' : '#dc2626';
+        legs.push({ latlngs: routeLatLngs(dleg.route), color });
+      }
+    }
     map.setRoute(legs);
     map.setStops({
       start: trip.start,
-      stops: tl.stops.map(r => ({ lat: r.stop.lat, lng: r.stop.lng, name: r.stop.name, cls: r.stop.kind === 'point' ? 'point' : (r.session && r.session.broken) ? 'broken' : '', tooltip: `${r.i + 1}. ${r.stop.name} · arrive ${fmt.clock(r.arrival)} at ${fmt.pct(r.arrivalSoc)}` })),
+      stops: tl.stops.map(r => ({ lat: r.stop.lat, lng: r.stop.lng, siteId: r.stop.siteId ?? null, name: r.stop.name, cls: r.stop.kind === 'point' ? 'point' : (r.session && r.session.broken) ? 'broken' : '', tooltip: `${r.i + 1}. ${r.stop.name} · arrive ${fmt.clock(r.arrival)} at ${fmt.pct(r.arrivalSoc)}` })),
       destination: trip.destination,
     });
     document.title = `${trip.meta.name} · ABTCP`;

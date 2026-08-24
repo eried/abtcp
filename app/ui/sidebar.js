@@ -59,11 +59,12 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
       </div>
     </div>
     <div class="card dest">
-      <header><h3>Destination</h3><button class="ghost" id="btn-dest-map" title="Pick on the map">${pickMode === 'dest' ? 'click the map…' : '📍 pick on map'}</button>${dest ? '<button class="ghost" id="btn-dest-clear" title="Clear destination">✕</button>' : ''}</header>
+      <header><h3>Destination</h3><button class="ghost" id="btn-roundtrip" title="Route back to the start as the final leg">↩ roundtrip</button><button class="ghost" id="btn-dest-map" title="Pick on the map">${pickMode === 'dest' ? 'click the map…' : '📍 pick on map'}</button>${dest ? '<button class="ghost" id="btn-dest-clear" title="Clear destination">✕</button>' : ''}</header>
       <div class="search"><input type="text" id="dest-search" placeholder="Optional: where are you heading?" value="${esc(search.dest.q)}" autocomplete="off"><div class="results" id="dest-results">${resultsHtml('dest')}</div></div>
-      ${dest ? `<div class="place"><b id="dest-name">${esc(dest.name)}</b><small>${Math.round(straight)} km straight line from the start</small></div>` : '<small>With a destination, “Next stop” only lists sites that make progress.</small>'}
+      ${dest ? `<div class="place"><b id="dest-name">${esc(dest.name)}</b><small>${Math.round(straight)} km straight line from the start · routed as the final leg below</small></div>` : '<small>With a destination, “Next stop” prefers sites that make progress by road, and the final leg is routed and timed.</small>'}
     </div>
     <div id="stops">${tl.stops.map(stopHtml).join('') || '<div class="card muted">No stops yet. Pick one from “Next stop” below, or click a red dot on the map.</div>'}</div>
+    ${tl.destination ? destHtml(tl.destination) : ''}
     ${candidatesHtml()}`;
   }
 
@@ -114,14 +115,36 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     }
     const rest = `<div class="row rest"><label>Rest <input type="number" class="rest-hours" min="0" step="0.5" value="${stop.rest ? stop.rest.hours : 0}"> h</label><label><input type="checkbox" class="rest-sentry" ${stop.rest && stop.rest.sentry ? 'checked' : ''}> Sentry on</label>${r.rest ? `<small>−${fmt.n1(r.rest.drainPct)} % · until ${fmt.time(r.rest.end)}</small>` : ''}</div>`;
     const warns = r.warnings.length ? `<ul class="warnings">${r.warnings.map(w => `<li class="${w.level}">${esc(w.msg)}</li>`).join('')}</ul>` : '';
+    const needsFill = r.leg.status === 'failed' || (r.leg.status === 'ok' && r.arrivalSoc < S.reserveSoc + 3);
+    const fill = needsFill ? `<div class="row"><button data-act="fill" title="Insert intermediate Superchargers before this stop until it is reachable (prefers sites you have not visited)">⛽ Insert stops before</button></div>` : '';
     return `<article class="${cls}" data-id="${esc(stop.id)}" data-index="${i}">
       <header><span class="num">${i + 1}</span><div class="title"><b>${name}</b><small>${meta}</small></div>
         <div class="tools"><button class="ghost" data-act="up" title="Move up" ${i === 0 ? 'disabled' : ''}>▲</button><button class="ghost" data-act="down" title="Move down" ${i === tl.stops.length - 1 ? 'disabled' : ''}>▼</button><button class="ghost btn-remove" data-act="remove" title="Remove stop">✕</button></div></header>
       <div class="leg">${leg}</div>
       <div class="arrive">Arrive <b>${fmt.time(r.arrival)}</b> at <b class="soc arrival-soc ${socClass(r.arrivalSoc, S.reserveSoc)}">${fmt.pct(r.arrivalSoc)}</b></div>
       <div class="deadline ${dlCls}">${dl}</div>
-      ${charge}${rest}${warns}
+      ${charge}${rest}${warns}${fill}
       <div class="depart">Depart <b>${fmt.time(r.depart)}</b> at <b class="soc depart-soc">${fmt.pct(r.departSoc)}</b></div>
+    </article>`;
+  }
+
+  function destHtml(dr) {
+    const S = store.trip.settings;
+    let leg;
+    if (dr.leg.status === 'ok') {
+      const L2 = dr.leg;
+      leg = `<b>${fmt.km(L2.km)}</b> · ${fmt.h(L2.driveH)} driving${L2.ferries ? ` · ⛴ ${L2.ferries} ferry ${fmt.h(L2.ferryH)}` : ''} · ↑${L2.gainM} m ↓${L2.lossM} m · <b>${fmt.whkm(L2.whKm)}</b> · ${fmt.temp(L2.temp)} <span class="muted">(${esc(L2.weatherSrc)})</span>`;
+    } else if (dr.leg.status === 'failed') {
+      leg = `<span class="soc bad">Route failed: ${esc(dr.leg.error)}</span>`;
+    } else {
+      leg = '<span class="muted">Routing…</span>';
+    }
+    const warns = dr.warnings.length ? `<ul class="warnings">${dr.warnings.map(w => `<li class="${w.level}">${esc(w.msg)}</li>`).join('')}</ul>` : '';
+    return `<article class="stop dest-card" id="dest-card">
+      <header><span class="num" style="background:#7c3aed;color:#fff">D</span><div class="title"><b>${esc(dr.destination.name)}</b><small>destination — end of the trip</small></div></header>
+      <div class="leg">${leg}</div>
+      <div class="arrive">Arrive <b>${fmt.time(dr.arrival)}</b> at <b class="soc ${socClass(dr.arrivalSoc, S.reserveSoc)}">${fmt.pct(dr.arrivalSoc)}</b></div>
+      ${warns}
     </article>`;
   }
 
@@ -143,8 +166,8 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     if (!list.length) return '<div class="candidate empty">No new sites within the search radius (see Settings).</div>';
     const reserve = store.trip.settings.reserveSoc;
     return list.map(c => `<div class="candidate" data-site="${c.site.id}" title="Add ${esc(c.site.name)} as the next stop">
-      <b>${esc(c.site.name)}</b><span class="dist">${fmt.km(c.roadKm)} · ${fmt.h(c.roadH)}</span>
-      <span class="meta">${c.site.kw || '?'} kW · ${c.site.stalls} stalls${c.progressKm != null ? ` · <span class="prog">${c.progressKm >= 0 ? '+' : ''}${Math.round(c.progressKm)} km toward${c.progressSrc === 'road' ? '' : ' (line)'}</span>` : ''}</span><span class="soc ${socClass(c.arrivalSoc, reserve)}">≈ ${fmt.pct(c.arrivalSoc)}</span>
+      <b>${c.site.iconic ? '🏅 ' : ''}${esc(c.site.name)}</b><span class="dist">${fmt.km(c.roadKm)} · ${fmt.h(c.roadH)}</span>
+      <span class="meta">${c.site.kw || '?'} kW · ${c.site.stalls} stalls${c.progressKm != null ? ` · <span class="prog">${c.progressKm >= 0 ? '+' : ''}${Math.round(c.progressKm)} km toward${c.progressSrc === 'road' ? '' : ' (line)'}</span>` : ''}${c.visitedYear ? ' · <span style="color:#f59e0b">↻ visited this year</span>' : ''}</span><span class="soc ${socClass(c.arrivalSoc, reserve)}">≈ ${fmt.pct(c.arrivalSoc)}</span>
     </div>`).join('');
   }
 
@@ -191,8 +214,9 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     }
     const t = store.trip;
     let prev = t.start, missing = false;
-    for (const s of t.stops) { const k = `${(+prev.lat).toFixed(5)},${(+prev.lng).toFixed(5)}>${(+s.lat).toFixed(5)},${(+s.lng).toFixed(5)}`; if (!t.legs[k] || t.legs[k].status !== 'ok') missing = true; prev = s; }
-    if (missing && t.stops.length) { /* a stop was added while building */ buildMissing(); }
+    for (const s of t.stops) { const k = `${(+prev.lat).toFixed(5)},${(+prev.lng).toFixed(5)}>${(+s.lat).toFixed(5)},${(+s.lng).toFixed(5)}`; if (!t.legs[k]) missing = true; prev = s; }
+    if (t.destination && t.destination.lat != null) { const d = t.destination; const k = `${(+prev.lat).toFixed(5)},${(+prev.lng).toFixed(5)}>${(+d.lat).toFixed(5)},${(+d.lng).toFixed(5)}`; if (!t.legs[k]) missing = true; }
+    if (missing) { buildMissing(); /* something new appeared while building; failed legs retry via Retry/Recompute */ }
   }
 
   async function addStop(site, { targetSoc = null } = {}) {
@@ -239,7 +263,8 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     store.update(t => { t.destination = dest; });
     search.dest = { q: '', results: [], busy: false };
     map.closePopup();
-    refreshCandidates(true);
+    if (dest) buildMissing().then(() => refreshCandidates(true));
+    else refreshCandidates(true);
   }
 
   async function retryLeg(index) {
@@ -272,6 +297,24 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     setStatus('');
     refreshCandidates(true);
     if (added) map.fitTo(tripPoints());
+  }
+
+  async function runGapFill(id) {
+    if (chaining) return;
+    chaining = true;
+    stopChain = false;
+    renderCandidates();
+    let added = 0;
+    try {
+      added = await planner.autoChain({ n: 10, beforeId: id, shouldStop: () => stopChain, onProgress: (a, total, stop) => setStatus(`Inserting ${a}: ${stop.name}`) });
+      if (added) toast.success(`Inserted ${added} stop${added === 1 ? '' : 's'}`);
+      else toast.error('No reachable intermediate site found — raise the previous charge target or the search radius');
+    } catch (e) {
+      toast.error(`Insert failed: ${(e && e.message) || e}`);
+    }
+    chaining = false;
+    setStatus('');
+    refreshCandidates(true);
   }
 
   function tripPoints() {
@@ -358,6 +401,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     if (!b) return;
     if (b.id === 'btn-start-map') { pickMode = pickMode === 'start' ? null : 'start'; toast.show(pickMode ? 'Click on the map to set the start' : 'Cancelled'); render(tl); return; }
     if (b.id === 'btn-dest-map') { pickMode = pickMode === 'dest' ? null : 'dest'; toast.show(pickMode ? 'Click on the map to set the destination' : 'Cancelled'); render(tl); return; }
+    if (b.id === 'btn-roundtrip') { const st = store.trip.start; setDestination({ lat: st.lat, lng: st.lng, name: `Back to ${st.name}` }); render(tl); return; }
     if (b.id === 'btn-dest-clear') { setDestination(null); render(tl); return; }
     if (b.id === 'btn-cand-refresh') { refreshCandidates(true); return; }
     if (b.id === 'btn-autochain') { runAutoChain(); return; }
@@ -370,6 +414,7 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     else if (b.dataset.act === 'up') moveStop(id, -1);
     else if (b.dataset.act === 'down') moveStop(id, +1);
     else if (b.dataset.act === 'retry') retryLeg(index);
+    else if (b.dataset.act === 'fill') runGapFill(id);
   });
 
   map.on('mapClick', ({ lat, lng }) => {

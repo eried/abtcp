@@ -187,21 +187,56 @@ export function compute(trip) {
     return r;
   });
 
+  let destResult = null;
+  if (trip.destination && trip.destination.lat != null) {
+    const d = trip.destination;
+    const legEval = evalLeg(trip.legs[legKey(prev, d)], trip);
+    let arrival = time;
+    let arrivalSoc = soc;
+    const w = [];
+    if (legEval.status === 'ok') {
+      arrival = time + legTimeH(legEval, profile) * H;
+      arrivalSoc = soc - legEval.kwh / usable * 100;
+      totalKm += legEval.km;
+      driveH += legEval.driveH;
+      ferryH += legEval.ferryH;
+      if (arrivalSoc < 0) w.push({ level: 'error', msg: `Unreachable: arrives at ${arrivalSoc.toFixed(0)} %` });
+      else if (arrivalSoc < S.reserveSoc) w.push({ level: 'warn', msg: `Arrives below reserve (${arrivalSoc.toFixed(0)} % < ${S.reserveSoc} %)` });
+    } else if (legEval.status === 'failed') {
+      failedLegs++;
+      w.push({ level: 'error', msg: `Route failed: ${legEval.error}` });
+    } else {
+      pendingLegs++;
+      w.push({ level: 'info', msg: 'Route not computed yet' });
+    }
+    minSoc = Math.min(minSoc, arrivalSoc);
+    const timer = { sinceLastH: lastStart == null ? null : (arrival - lastStart) / H, deadline: lastStart == null ? null : (S.rules.anchor === 'end' ? lastEnd : lastStart) + S.rules.windowH * H };
+    timer.deadlineInH = timer.deadline == null ? null : (timer.deadline - arrival) / H;
+    destResult = { destination: d, leg: legEval, arrival, arrivalSoc, warnings: w, timer };
+    time = arrival;
+    soc = Math.max(0, arrivalSoc);
+  }
+
   results.forEach((r, i) => {
     const next = results[i + 1];
     r.minUsefulSoc = next && next.leg.status === 'ok' ? Math.min(100, Math.ceil(next.leg.kwh / usable * 100 + S.reserveSoc)) : null;
   });
+  if (results.length && destResult && destResult.leg.status === 'ok') {
+    const r = results[results.length - 1];
+    if (r.minUsefulSoc == null) r.minUsefulSoc = Math.min(100, Math.ceil(destResult.leg.kwh / usable * 100 + S.reserveSoc));
+  }
 
-  const eta = results.length ? results[results.length - 1].depart : startTime;
+  const eta = destResult ? destResult.arrival : (results.length ? results[results.length - 1].depart : startTime);
   const nextDeadline = lastStart == null ? null : (S.rules.anchor === 'end' ? lastEnd : lastStart) + S.rules.windowH * H;
   const newForYear = [...counted].filter(id => !visitedBefore.has(Number(id))).length;
   const summary = {
     uniqueCounted: counted.size, longestStreak, currentStreak, firstBreakIndex, newForYear,
     totalKm, totalDriveH: driveH, totalFerryH: ferryH, totalTimeH: (eta - startTime) / H, chargeH, kwhBilled, kwhStored,
     eta, minSoc, pendingLegs, failedLegs, nextDeadline, endSoc: soc,
-    warnings: results.flatMap(r => r.warnings.filter(w => w.level !== 'info').map(w => ({ i: r.i, ...w }))),
+    warnings: results.flatMap(r => r.warnings.filter(w => w.level !== 'info').map(w => ({ i: r.i, ...w })))
+      .concat(destResult ? destResult.warnings.filter(w => w.level !== 'info').map(w => ({ i: results.length, ...w })) : []),
   };
-  return { stops: results, summary, startTime };
+  return { stops: results, destination: destResult, summary, startTime };
 }
 
 function fmtH(h) {
