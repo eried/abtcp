@@ -3,6 +3,7 @@
 import { legEnergy } from './energy.js';
 import { chargeSession, restDrainPctPerH } from './charging.js';
 import { unpackChunk } from './geo.js';
+import { contestRegion, rankRegions } from './regions.js';
 
 const H = 3600e3;
 const MIN = 60e3;
@@ -81,6 +82,15 @@ export function compute(trip) {
   let soc = +trip.start.soc;
   let prev = trip.start;
   const counted = new Set();
+  const regionTally = new Map(); // contest region → { sites, kwh }
+  const bumpRegion = (country, sites, kwh) => {
+    const region = contestRegion(country);
+    const row = regionTally.get(region) || { region, sites: 0, kwh: 0, countries: new Set() };
+    row.sites += sites;
+    row.kwh += kwh;
+    if (sites && country) row.countries.add(country);
+    regionTally.set(region, row);
+  };
   let lastStart = null, lastEnd = null;
   let currentStreak = 0, longestStreak = 0, firstBreakIndex = -1;
   let strandedIndex = -1;
@@ -157,11 +167,13 @@ export function compute(trip) {
         }
         if (belowMin) warnings.push({ level: 'warn', msg: `Session below the safety minimum (${S.rules.minSessionMin} min / ${S.rules.minSessionKwh} kWh)` });
         counted.add(stop.siteId);
+        bumpRegion(stop.country, 1, sess.kwhBilled);
         currentStreak++;
         longestStreak = Math.max(longestStreak, currentStreak);
         lastStart = start;
         lastEnd = end;
       } else if (inside) {
+        bumpRegion(stop.country, 0, sess.kwhBilled); // repeat visits still add energy
         warnings.push({ level: 'info', msg: 'Repeat site: does not count and does not reset the timer' });
       }
       session = { start, end, minutes: sess.minutes, chargeMin: sess.chargeMin, kwhStored: sess.kwhStored, kwhBilled: sess.kwhBilled, avgKw: sess.avgKw, counted: isNew, isNew, deadline, deadlineInH, sinceLastH, broken, belowMin, targetSoc: target, ac: false };
@@ -248,10 +260,12 @@ export function compute(trip) {
   const eta = destResult ? destResult.arrival : (results.length ? results[results.length - 1].depart : startTime);
   const nextDeadline = lastStart == null ? null : (S.rules.anchor === 'end' ? lastEnd : lastStart) + S.rules.windowH * H;
   const newForYear = [...counted].filter(id => !visitedBefore.has(Number(id))).length;
+  const byRegion = rankRegions([...regionTally.values()].map(r => ({ ...r, countries: [...r.countries].sort() })));
+  const assignedRegion = byRegion.length ? byRegion[0].region : null;
   const summary = {
     uniqueCounted: counted.size, longestStreak, currentStreak, firstBreakIndex, newForYear,
     totalKm, totalDriveH: driveH, totalFerryH: ferryH, totalTimeH: (eta - startTime) / H, chargeH, kwhBilled, kwhStored,
-    eta, minSoc, pendingLegs, failedLegs, nextDeadline, endSoc: soc, strandedIndex,
+    eta, minSoc, pendingLegs, failedLegs, nextDeadline, endSoc: soc, strandedIndex, byRegion, assignedRegion,
     warnings: results.flatMap(r => r.warnings.filter(w => w.level !== 'info').map(w => ({ i: r.i, ...w })))
       .concat(destResult ? destResult.warnings.filter(w => w.level !== 'info').map(w => ({ i: results.length, ...w })) : []),
   };

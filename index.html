@@ -16,7 +16,7 @@
       <span class="bolt" aria-hidden="true">⚡</span>
     </div>
     <div class="counters" aria-label="Trip summary">
-      <div class="counter"><b id="counter-unique">0</b><span>sites</span></div>
+      <div class="counter clickable" id="counter-unique-box" role="button" tabindex="0" title="Unique Supercharger sites in this plan — click for the per-region breakdown"><b id="counter-unique">0</b><span>sites</span></div>
       <div class="counter wide"><b id="counter-streak">–</b><span>streak</span></div>
       <div class="counter wide"><b id="counter-deadline">–</b><span>next by</span></div>
       <div class="counter"><b id="counter-km">0 km</b><span>distance</span></div>
@@ -69,12 +69,14 @@
   <dialog id="dialog" class="dialog" aria-label="Settings and help">
     <div class="dialog-head">
       <button id="dtab-settings" class="dtab active">Settings</button>
+      <button id="dtab-stats" class="dtab">Contest stats</button>
       <button id="dtab-help" class="dtab">Help &amp; rules</button>
       <span class="spacer"></span>
       <button id="dialog-close" class="ghost" title="Close (Esc)">✕</button>
     </div>
     <div class="dialog-body">
       <section id="panel-settings" class="panel"></section>
+      <section id="panel-stats" class="panel" hidden></section>
       <section id="panel-help" class="panel" hidden>
         <h2>What this is</h2>
         <p>A planner for Tesla's <a href="https://www.tesla.com/support/tesla-app/charging-badges/contest" target="_blank" rel="noopener">2026 Free Supercharging Competition</a>, "Longest Trip" category: the longest continuous streak of <em>unique</em> Supercharger sites (a distinct location as shown in the app / navigation) where you begin a charging session at each new site within <b>24 hours of the previous session</b> — Tesla's page says "start time" in the category definition and "end of your previous session" in the trip explanation, so plan with the stricter start-anchored timer (Settings lets you switch). Repeat visits are allowed but neither count nor reset the timer. Sessions anywhere in the world count; you compete in the region where you visited the most unique sites. Ties break on total kWh. Competition period: 1 Jan 2026 00:01 – 31 Dec 2026 23:59 local time.</p>
@@ -95,6 +97,7 @@
           <li>While <b>replacing</b> a stop, the panel header says which stop is being replaced, hovered chargers show <b>⇄</b> with an animated line from the old site, and Esc, the ✕ cancel button or a click on empty map leaves replace mode.</li>
           <li>If a leg cannot be driven, that stop and <b>every stop after it</b> are marked unreachable — the planner will not invent a charging session for a car that never arrived. Fix the gap (⊕ on the card, or a higher charge target earlier) and the rest recomputes.</li>
           <li>While a leg's road route is still being fetched, the map draws a dashed <b>animated straight line</b> between the two points (red and still if the routing failed) so you can see the plan taking shape.</li>
+          <li>Click the <b>sites</b> counter for the per-region breakdown: the contest puts you in the region where you visited the most unique sites (ties broken by energy), and you compete only against that region.</li>
           <li>Hovering a suggestion or a stop card rings that charger on the map. “<b>+NN km toward</b>” on a suggestion is the road-distance progress toward the destination that the hop gains (“(line)” = straight-line estimate when the routing table was unavailable). 📍 pans the map to that charger; the popup of a planned charger also offers <b>Remove stop #N</b>. The <b>Itinerary</b> button (top bar) lays the whole plan out as a calendar — one column per day, driving / charging / rests on an hour grid, with the red ⏱ streak-deadline line.</li>
           <li>Every stop card has a <b>battery bar</b> — solid = the level you arrive with, <b>blue</b> = what you charge there (amber = what you lose while resting), the white tick = your reserve. The start (S), destination (D) and numbered badges on the map carry the same bar, and repeat visits to one site fan out side by side with an amber pass number. The map filter (<b>All / ⚡ Reachable / 🏅 Iconic</b>) limits the dots to what the car can reach right now from the end of the plan, or to badge sites — your own stops, start, destination and route always stay visible. <b>⇄</b> on a card starts a replace: pick another charger from the map or the list and it swaps in, keeping the charge level and rest.</li>
           <li><b>Export</b> the plan as JSON (everything included: settings, car, stops, cached routes) and <b>Import</b> it later; the browser also autosaves.</li>

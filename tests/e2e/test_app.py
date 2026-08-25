@@ -561,6 +561,16 @@ def test_plan_export_import(page, url, log):
     page.click("#chip-all")
     page.wait_for_function(f"window.__abtcp.map.visibleCount() === {total_visible}", timeout=5000)
 
+    # --- clicking the sites counter opens the per-region breakdown
+    page.click("#counter-unique-box")
+    page.wait_for_selector("#panel-stats:visible", timeout=5000)
+    stats = page.text_content("#panel-stats")
+    assert "EMEA" in stats and "Your region would be" in stats, stats[:200]
+    assert "Norway" in stats, "the countries visited are listed"
+    assert page.evaluate("window.__abtcp.timeline.summary.assignedRegion") == "EMEA"
+    assert page.locator("#panel-stats .iconic-table tr").count() >= 2
+    close_dialog(page)
+
     # --- iconic badge table in Help (now a dialog tab)
     page.click("#btn-settings")
     page.click("#dtab-help")

@@ -2,6 +2,7 @@
 import { loadChargers, applyIconic, USABLE_STATUSES, STATUS_LABEL } from './chargers.js';
 import { createStore, deserialize, serialize } from './state.js';
 import { compute, legKey } from './model/timeline.js';
+import { contestRegion, rankRegions, EMEA_EXCLUDED_RESIDENCY } from './model/regions.js';
 import { routeLatLngs, haversineM } from './model/geo.js';
 import { quickWhKm } from './model/energy.js';
 import { createQueue } from './services/http.js';
@@ -188,14 +189,15 @@ async function main() {
 
   // ---------- settings / help dialog ----------
   const dialog = $('dialog');
-  const dTabs = { settings: $('dtab-settings'), help: $('dtab-help') };
-  const dPanels = { settings: settingsEl, help: $('panel-help') };
+  const dTabs = { settings: $('dtab-settings'), stats: $('dtab-stats'), help: $('dtab-help') };
+  const dPanels = { settings: settingsEl, stats: $('panel-stats'), help: $('panel-help') };
   function showDialogTab(name) {
     for (const k of Object.keys(dTabs)) {
       dTabs[k].classList.toggle('active', k === name);
       dPanels[k].hidden = k !== name;
     }
     if (name === 'settings') paintSettings();
+    if (name === 'stats') paintStats();
   }
   function openDialog(name) {
     showDialogTab(name);
@@ -204,8 +206,50 @@ async function main() {
   }
   Object.entries(dTabs).forEach(([k, b]) => b.addEventListener('click', () => showDialogTab(k)));
   $('btn-settings').addEventListener('click', () => openDialog('settings'));
+  const openStats = () => openDialog('stats');
+  $('counter-unique-box').addEventListener('click', openStats);
+  $('counter-unique-box').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openStats(); } });
   $('dialog-close').addEventListener('click', () => dialog.close());
   dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); }); // click the backdrop
+
+  // ---------- contest stats (per region) ----------
+  function paintStats() {
+    const trip = store.trip;
+    const tl = lastTl || compute(trip);
+    const S = tl.summary;
+    // The real assignment counts the whole year, so fold in the sites marked as already visited.
+    const earlier = new Map();
+    for (const id of trip.visitedBefore || []) {
+      const site = db.byId(id);
+      if (!site) continue;
+      const region = contestRegion(site.country);
+      earlier.set(region, (earlier.get(region) || 0) + 1);
+    }
+    const regions = new Set([...S.byRegion.map(r => r.region), ...earlier.keys()]);
+    const rows = rankRegions([...regions].map(region => {
+      const inPlan = S.byRegion.find(r => r.region === region) || { sites: 0, kwh: 0, countries: [] };
+      const before = earlier.get(region) || 0;
+      return { region, sites: inPlan.sites + before, planSites: inPlan.sites, earlier: before, kwh: inPlan.kwh, countries: inPlan.countries };
+    }));
+    const total = rows.reduce((sum, r) => sum + r.sites, 0);
+    const assigned = rows.length && rows[0].sites > 0 ? rows[0].region : null;
+    const tied = assigned && rows.filter(r => r.sites === rows[0].sites).length > 1;
+    $('panel-stats').innerHTML = `
+      <h2>Which region would you compete in?</h2>
+      <p class="muted" style="margin:4px 0 10px">Tesla assigns you to the region where you visited the <b>most unique Supercharger sites</b> during 2026; ties are broken by the <b>most energy charged</b> there. You then compete only against participants of that region — but sessions at any Supercharger in the world still count toward your own totals.</p>
+      ${total ? `<div class="assigned ${assigned === 'China' ? 'warn' : ''}">${assigned === 'China' ? '⚠ Most of your sites are in China, which runs its own separate competition.' : `Your region would be <b>${esc(assigned)}</b>${tied ? ' — tied on sites, decided by energy' : ''}`}</div>` : '<div class="assigned">No counted sites yet.</div>'}
+      <table class="iconic-table" style="margin-top:10px">
+        <tr><th>Region</th><th>Unique sites</th><th>In this plan</th><th>Earlier in 2026</th><th>kWh here</th></tr>
+        ${rows.map(r => `<tr${r.region === assigned ? ' style="color:var(--green)"' : ''}><td>${esc(r.region)}</td><td>${r.sites}</td><td>${r.planSites}</td><td>${r.earlier || '–'}</td><td>${fmt.kwh(r.kwh)}</td></tr>`).join('')}
+      </table>
+      ${rows.filter(r => r.countries.length).map(r => `<p class="muted" style="margin:6px 0 0"><b>${esc(r.region)}</b>: ${r.countries.map(esc).join(', ')}</p>`).join('')}
+      <h2>Fine print</h2>
+      <ul class="muted" style="margin:4px 0 0;padding-left:18px">
+        <li>Regions: <b>Americas</b> (North and South America), <b>Asia-Pacific</b> (excluding China, which runs its own competition) and <b>EMEA</b> (Europe, Middle East and Africa — the Middle East counts as EMEA even though the site database files it under Asia Pacific).</li>
+        <li>EMEA excludes <em>residents</em> of ${EMEA_EXCLUDED_RESIDENCY.join(', ')} — charging at sites in those countries still counts for everyone else.</li>
+        <li>“Earlier in 2026” comes from the sites you marked as already visited (map popup → “Visited earlier this year”); their energy is not tracked here.</li>
+      </ul>`;
+  }
 
   // ---------- itinerary ----------
   const itinEl = $('itinerary');
@@ -307,6 +351,7 @@ async function main() {
         : null,
     });
     if (showItin) paintItinerary(tl, trip);
+    if (dialog.open && !dPanels.stats.hidden) paintStats();
     const lastStop = trip.stops[trip.stops.length - 1];
     const sig = `${trip.stops.length}|${lastStop ? lastStop.id : ''}|${Math.round(tl.stops.length ? tl.stops[tl.stops.length - 1].departSoc : trip.start.soc)}`;
     if (sig !== filterSig) { filterSig = sig; applyMapFilters(); }

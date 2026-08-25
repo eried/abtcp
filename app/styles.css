@@ -325,3 +325,9 @@ main { display: flex; flex: 1; min-height: 0; }
 .gap-row { display: flex; align-items: center; justify-content: center; margin: -2px 0 8px; }
 .gap-row .gap-fill { font-size: 11.5px; padding: 3px 10px; border-radius: 999px; color: var(--muted); background: var(--bg-2); border: 1px dashed var(--line); }
 .gap-row .gap-fill:hover { color: #fff; background: var(--red); border-color: var(--red); border-style: solid; }
+
+/* Clickable counter + region breakdown */
+.counter.clickable { cursor: pointer; }
+.counter.clickable:hover { border-color: #34465b; background: #222d3a; }
+.assigned { padding: 8px 10px; border-radius: 8px; background: rgba(34,197,94,.12); color: #9be2b0; font-size: 13px; }
+.assigned.warn { background: rgba(245,158,11,.14); color: #ffd58a; }

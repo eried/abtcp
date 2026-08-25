@@ -260,3 +260,37 @@ test('destination is routed as a final leg with ETA, minUseful and warnings', ()
   assert.equal(compute(t2).destination.leg.status, 'pending');
   assert.equal(compute(trip({ stops: [], legs: [] })).destination, null);
 });
+
+test('per-region tally follows the contest rules (Middle East is EMEA, China is separate)', async () => {
+  const { contestRegion, rankRegions } = await import('../../app/model/regions.js');
+  assert.equal(contestRegion('Norway'), 'EMEA');
+  assert.equal(contestRegion('Turkey'), 'EMEA');
+  assert.equal(contestRegion('Morocco'), 'EMEA');
+  assert.equal(contestRegion('Israel'), 'EMEA', 'the site database files it under Asia Pacific');
+  assert.equal(contestRegion('United Arab Emirates'), 'EMEA');
+  assert.equal(contestRegion('USA'), 'Americas');
+  assert.equal(contestRegion('Chile'), 'Americas');
+  assert.equal(contestRegion('Japan'), 'Asia-Pacific');
+  assert.equal(contestRegion('China'), 'China');
+  assert.equal(contestRegion('Hong Kong'), 'China');
+  assert.equal(contestRegion(''), 'Unknown');
+  // ties are decided by energy
+  const ranked = rankRegions([{ region: 'EMEA', sites: 3, kwh: 10 }, { region: 'Americas', sites: 3, kwh: 40 }, { region: 'Asia-Pacific', sites: 5, kwh: 1 }]);
+  assert.deepEqual(ranked.map(r => r.region), ['Asia-Pacific', 'Americas', 'EMEA']);
+});
+
+test('compute reports unique sites and energy per contest region', () => {
+  const NO = SITE(11, 69.4, 20.3);
+  const SE = { ...SITE(12, 68.9, 18.6), country: 'Sweden' };
+  const US = { ...SITE(13, 68.4, 17.4), country: 'USA' };
+  const t = trip({ stops: [newStop({ site: NO, targetSoc: 80 }), newStop({ site: SE, targetSoc: 80 }), newStop({ site: US, targetSoc: 80 })], legs: [{ km: 100 }, { km: 100 }, { km: 100 }] });
+  const { summary } = compute(t);
+  const emea = summary.byRegion.find(r => r.region === 'EMEA');
+  const americas = summary.byRegion.find(r => r.region === 'Americas');
+  assert.equal(emea.sites, 2);
+  assert.deepEqual(emea.countries, ['Norway', 'Sweden']);
+  assert.equal(americas.sites, 1);
+  assert.ok(emea.kwh > 0 && americas.kwh > 0);
+  assert.equal(summary.assignedRegion, 'EMEA', 'most unique sites wins');
+  assert.equal(summary.byRegion[0].region, 'EMEA', 'ranked list');
+});
