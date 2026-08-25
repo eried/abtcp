@@ -77,6 +77,7 @@ pip install playwright && playwright install chromium
 python tests/e2e/test_app.py            # Playwright e2e, offline (fixtures replay OSRM / Open-Meteo)
 ABTCP_LIVE=1 python tests/e2e/test_app.py   # + a smoke test against the real services
 python tools/capture_fixtures.py        # re-record the OSRM fixtures used by the e2e tests
+npm run scenarios                       # 10 real-world 'fill this leg' scenarios against the live services
 ```
 
 ## Data & services (all free, called from the browser)

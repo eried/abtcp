@@ -252,13 +252,13 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
    * the leg and how close they land to the target. `maxReachKm` drops anything the car cannot
    * reach from `a` — the reason a naive midpoint search finds only unusable sites on long legs.
    */
-  async function corridorCandidates(a, b, { targetKm, corridorKm, maxReachKm, limit = 6 }) {
+  async function corridorCandidates(a, b, { targetKm, corridorKm, maxReachKm, spanKm = null, limit = 6 }) {
     const trip = store.trip;
     const inTrip = new Set(trip.stops.map(x => x.siteId).filter(x => x != null));
     const visitedYear = new Set((trip.visitedBefore || []).map(Number));
     const samples = routeSamples(a, b);
     const total = samples.length ? samples[samples.length - 1].km : 0;
-    const span = Math.max(90, targetKm * 0.45);
+    const span = spanKm || Math.max(90, targetKm * 0.45);
     const spacing = Math.max(12, corridorKm * 0.8);
     const picked = new Map();
     let lastKm = -1e9;
@@ -297,7 +297,7 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
    * charge, otherwise the furthest point the car can still reach — so a leg far beyond the range
    * is filled from the start outwards until it is drivable, and only then subdivided.
    */
-  async function fillOneGap(insertAt, a, b, shouldStop, tl) {
+  async function fillOneGap(insertAt, a, b, shouldStop, tl, diag = {}) {
     const S = store.trip.settings;
     const cap = S.maxChargeSoc ?? 90;
     const f = S.fill || {};
@@ -305,14 +305,36 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
     const maxKm = f.maxDetourKm ?? 60;
     const gapTotal = gapKm(a, b);
     const socA = insertAt === 0 ? +store.trip.start.soc : ((tl.stops[insertAt - 1] || {}).departSoc ?? +store.trip.start.soc);
+    // How far we could go if the previous stop charged more: tryFit raises that target when it
+    // helps, so the search must not pre-filter candidates using only the CURRENT charge.
+    const prev = insertAt >= 1 ? store.trip.stops[insertAt - 1] : null;
+    const ceilingSoc = insertAt === 0 ? 100 : (prev && prev.kind === 'charger' && prev.charge ? (S.maxChargeSoc ?? 90) : socA);
+    const socReach = Math.max(socA, Math.min(100, ceilingSoc));
     const whKm = averageWhKm(tl, store.trip);
-    const rangeKm = Math.max(40, (socA - S.reserveSoc) / 100 * store.trip.car.usableKwh / (whKm / 1000));
+    const perKm = whKm / 1000;
+    const rangeKm = Math.max(40, (socReach - S.reserveSoc) / 100 * store.trip.car.usableKwh / perKm);
     const targetKm = Math.min(gapTotal / 2, rangeKm * 0.85);
     const maxReachKm = rangeKm * 0.97;
+    diag.rangeKm = rangeKm;
+    diag.socReach = socReach;
 
-    for (let corridor = startKm; ; corridor = Math.min(corridor * 2, maxKm)) {
+    // A leg that cannot be driven as it stands is worth a bigger detour than a leg we are merely
+    // packing with extra sites — otherwise the answer is "nothing fits" when a solution exists.
+    const allowKm = diag.undrivable ? Math.min(maxKm * 3, 250) : maxKm;
+    const baseSpan = Math.max(90, targetKm * 0.45);
+    diag.allowKm = allowKm;
+    for (let corridor = startKm, round = 0; ; corridor = Math.min(corridor * 2, allowKm), round++) {
       if (shouldStop()) return null;
-      const cands = await corridorCandidates(a, b, { targetKm, corridorKm: corridor, maxReachKm });
+      const spanKm = Math.min(baseSpan * Math.pow(1.7, round), Math.max(maxReachKm, targetKm) * 1.2);
+      const cands = await corridorCandidates(a, b, { targetKm, corridorKm: corridor, maxReachKm, spanKm });
+      if (!cands.length) { // remember the closest site we had to reject, to explain the failure
+        const any = await corridorCandidates(a, b, { targetKm, corridorKm: Math.max(corridor, 120), maxReachKm: Infinity, spanKm: Math.max(spanKm, targetKm * 1.5), limit: 4 });
+        for (const cand of any) {
+          if (!diag.nearestOnRoute && cand.detourKm <= 15) diag.nearestOnRoute = { name: cand.site.name, fromAKm: cand.fromAKm, detourKm: cand.detourKm };
+          const reachable = cand.fromAKm <= maxReachKm;
+          if (reachable && (!diag.needsDetour || cand.detourKm < diag.needsDetour.detourKm)) diag.needsDetour = { name: cand.site.name, fromAKm: cand.fromAKm, detourKm: cand.detourKm };
+        }
+      }
       for (const c of cands) {
         if (shouldStop()) return null;
         const prevId = insertAt >= 1 ? store.trip.stops[insertAt - 1].id : null;
@@ -332,7 +354,7 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
           t.start.soc = startSoc;
         });
       }
-      if (corridor >= maxKm) return null;
+      if (corridor >= allowKm) return null;
     }
   }
 
@@ -343,7 +365,7 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
    * detour budget starts small and only widens when nothing fits. Bounded per run (`maxAdds`);
    * call it again to go deeper, which is then an easier problem between two closer stops.
    */
-  async function fillLeg({ gapIndex, maxAdds = null, onProgress = null, shouldStop = () => false } = {}) {
+  async function fillLeg({ gapIndex, maxAdds = null, onProgress = null, onFail = null, shouldStop = () => false } = {}) {
     const trip0 = store.trip;
     const nodes0 = nodesOf(trip0);
     if (gapIndex == null || gapIndex < 0 || gapIndex + 1 >= nodes0.length) return 0;
@@ -353,6 +375,7 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
     const hardCap = Math.max(perRun, 14); // a leg far beyond one charge may need several stops
     const exhausted = new Set();
     let added = 0;
+    let lastDiag = null;
 
     while (added < hardCap && !shouldStop()) {
       const trip = store.trip;
@@ -383,8 +406,10 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
 
       let placed = null;
       for (const g of gaps) {
-        placed = await fillOneGap(g.insertAt, g.a, g.b, shouldStop, tl);
+        const diag = { gapKm: g.km, from: g.a.name || 'the start', to: g.b.name || 'the destination', undrivable: !g.reachable };
+        placed = await fillOneGap(g.insertAt, g.a, g.b, shouldStop, tl, diag);
         if (placed) break;
+        lastDiag = diag;
         exhausted.add(g.key); // nothing fits here even at the widest detour
       }
       if (!placed) break;
@@ -392,6 +417,7 @@ export function createPlanner({ store, db, osrm, elevation, weatherAt, now = () 
       if (onProgress) onProgress(added, Math.max(perRun, added), placed.stop, placed);
     }
     pruneLegs();
+    if (!added && lastDiag && onFail) onFail(lastDiag);
     return added;
   }
 

@@ -5,6 +5,7 @@
   "description": "A Better Tesla Contest Planner - plan road trips that maximize unique Supercharger sites",
   "scripts": {
     "test": "node --test \"tests/unit/*.test.mjs\"",
-    "serve": "python -m http.server 8080"
+    "serve": "python -m http.server 8080",
+    "scenarios": "node tools/fill_scenarios.mjs"
   }
 }

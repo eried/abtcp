@@ -236,3 +236,36 @@ test('corridor search finds on-route sites and ranks by detour then proximity to
   const unreachable = await planner.corridorCandidates(a, b, { targetKm: planner.gapKm(a, b) / 2, corridorKm: 60, maxReachKm: 1 });
   assert.equal(unreachable.length, 0, 'sites beyond the remaining range are dropped');
 });
+
+test('the search considers the charge the previous stop could take, not only its current one', async () => {
+  const { store, planner } = setup();
+  // leaving with 15 % nothing is in range; charging higher first makes the nearest site reachable
+  store.update(t => {
+    t.start.soc = 15;
+    t.stops.push(newStop({ site: SITES[3], targetSoc: 60 })); // Narvik, ~250 km of fake road
+    t.settings.fill = { startDetourKm: 40, maxDetourKm: 120, perRun: 1 };
+  });
+  await planner.ensureLegs();
+  const added = await planner.fillLeg({ gapIndex: 0 });
+  assert.ok(added >= 1, 'a site was inserted by planning a bigger charge beforehand');
+  assert.ok(store.trip.start.soc > 15, `the start charge was raised to reach it (${store.trip.start.soc} %)`);
+  assert.ok(store.trip.start.soc <= 100);
+  const tl = compute(store.trip);
+  tl.stops.forEach(r => assert.ok(r.arrivalSoc >= store.trip.settings.reserveSoc, `${r.stop.name} arrives at ${r.arrivalSoc}`));
+});
+
+test('when nothing fits, the failure explains why', async () => {
+  const { store, planner } = setup();
+  store.update(t => {
+    t.stops.push(newStop({ site: SITES[3], targetSoc: 60 }));
+    t.settings.fill = { startDetourKm: 0.1, maxDetourKm: 0.2, perRun: 2 }; // impossible budget
+  });
+  await planner.ensureLegs();
+  let diag = null;
+  const added = await planner.fillLeg({ gapIndex: 0, onFail: d => { diag = d; } });
+  assert.equal(added, 0);
+  assert.ok(diag, 'a diagnosis is reported');
+  assert.ok(diag.rangeKm > 0, 'it states how far the car can go');
+  assert.equal(diag.from, store.trip.start.name);
+  assert.ok(diag.nearestOnRoute || diag.needsDetour, 'it names a site that was rejected');
+});

@@ -447,18 +447,30 @@ export function createSidebar({ el, store, db, planner, geocode, map, toast, set
     stopReason = '';
     if (busy) busy.start({ title: 'Filling this leg with more Superchargers', total: per, onCancel: () => { stopChain = true; stopReason = 'you pressed Stop'; } });
     let added = 0;
+    let diag = null;
+    const normalDetour = (S.fill && S.fill.maxDetourKm) || 60;
     try {
       added = await store.batch(() => planner.fillLeg({
         gapIndex,
         shouldStop: () => stopChain,
+        onFail: d => { diag = d; },
         onProgress: (a, max, stop, best) => {
+          const big = best.detourKm > normalDetour ? ' — needed to keep the leg drivable' : '';
           setStatus(`Fill ${a}/${max}: ${stop.name}`);
-          if (busy) busy.update({ done: a, text: `${stop.name} (+${Math.round(best.detourKm)} km detour)`, log: `+ ${stop.name} · detour ${Math.round(best.detourKm)} km` });
+          if (busy) busy.update({ done: a, text: `${stop.name} (+${Math.round(best.detourKm)} km detour)`, log: `+ ${stop.name} · detour ${Math.round(best.detourKm)} km${big}` });
         },
       }));
       if (stopChain) toast.show(`Fill stopped — ${stopReason || 'cancelled'}${added ? ` · kept ${added} site${added === 1 ? '' : 's'}` : ''}`);
       else if (added) toast.success(`Added ${added} site${added === 1 ? '' : 's'} to this leg — click again to fit more between them`);
-      else toast.error(`Nothing fits in this leg within ${(S.fill && S.fill.maxDetourKm) || 60} km detour and a ${S.maxChargeSoc ?? 90} % charge cap`);
+      else {
+        const bits = [];
+        if (diag && diag.rangeKm) bits.push(`you can drive about ${Math.round(diag.rangeKm)} km from ${esc(diag.from)} on a full charge`);
+        if (diag && diag.nearestOnRoute) bits.push(`the nearest Supercharger on this route is ${Math.round(diag.nearestOnRoute.fromAKm)} km along it`);
+        if (diag && diag.needsDetour) bits.push(`${esc(diag.needsDetour.name)} would fit with a ${Math.round(diag.needsDetour.detourKm)} km detour`);
+        toast.error(bits.length
+          ? `Nothing fits here: ${bits.join('; ')}. Raise “widen up to” in Settings → Filling a leg, charge more at the previous stop, or drive slower.`
+          : `Nothing fits in this leg within ${normalDetour} km detour and a ${S.maxChargeSoc ?? 90} % charge cap`);
+      }
     } catch (e) {
       toast.error(`Fill failed: ${(e && e.message) || e}`);
     }
